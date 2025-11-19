@@ -47,7 +47,8 @@ public class CarController : MonoBehaviour
     [SerializeField] private AnimationCurve turningCurve; 
     [SerializeField] private float dragCoefficent = 2f; 
     [SerializeField] private float brakingDeceleration = 150f; 
-    [SerializeField] private float brakingDragCoefficent = 1f; 
+    [SerializeField] private float brakingDragCoefficent = 1f;
+    [SerializeField] private float speedLimiter = 0.95f; // Max hıza yaklaşınca kuvvet azalır
 
    
     private Vector3 currentCarLocalVelocity = Vector3.zero; 
@@ -143,9 +144,26 @@ public class CarController : MonoBehaviour
     }
     private void Acceleration()
     {
-        if (currentCarLocalVelocity.z < maxSpeed)
+        float currentSpeed = Mathf.Abs(currentCarLocalVelocity.z);
+        
+        // Max speed'e yaklaştıkça kuvveti azalt (gerçekçi motor davranışı)
+        if (currentSpeed < maxSpeed)
         {
-            carRB.AddForceAtPosition(acceleration * moveInput * transform.forward, accelerationPoint.position, ForceMode.Acceleration);
+            // Speed ratio'ya göre kuvvet azaltma (0-1 arası)
+            float speedRatio = currentSpeed / maxSpeed;
+            
+            // Max speed'in %95'inden sonra güç hızla düşer
+            float powerMultiplier = 1f;
+            if (speedRatio > speedLimiter)
+            {
+                // Kalan %5'lik kısımda güç exponansiyel azalır
+                float remainingRatio = (1f - speedRatio) / (1f - speedLimiter);
+                powerMultiplier = Mathf.Pow(remainingRatio, 2); // Quadratic falloff
+            }
+            
+            // Acceleration değerinden bağımsız şekilde max speed'i zorla
+            float finalAcceleration = acceleration * moveInput * powerMultiplier;
+            carRB.AddForceAtPosition(finalAcceleration * transform.forward, accelerationPoint.position, ForceMode.Acceleration);
         }
     }
     private void Decelration()
