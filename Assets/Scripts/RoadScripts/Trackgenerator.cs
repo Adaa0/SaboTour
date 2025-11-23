@@ -1,6 +1,8 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine.Events;
+
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -24,18 +26,23 @@ public class TrackGenerator : MonoBehaviour
     [Range(0, 180)] public float maxTurnAngle = 150f;
 
     [Header("Mesh Settings")]
-    public bool generate3DTrack = false;
-    public float noiseScale = 15f;
     [Range(5f, 50f)] public float roadWidth = 25f;
     public float uvTiling = 10f;
+
+    [Header("Checkpoint Settings")]
+    public GameObject checkpointPrefab;
+    [Range(3, 30)] public int checkpointsPerLap = 10;
+    public bool showCheckpointsInEditor = true;
+
+    [HideInInspector] public UnityEvent onTrackGenerated;
 
     [Header("Debug Info")]
     [SerializeField] private int _seed;
     public int seed { get { return _seed; } private set { _seed = value; } }
 
-    private float[,] heightMap;
-    private List<Vector3> _trackPoints3D;
+    private List<Vector3> _trackPoints;
     private List<Vector2> _refinedPoints;
+    private List<GameObject> _checkpoints = new List<GameObject>();
 
     void Start()
     {
@@ -46,12 +53,17 @@ public class TrackGenerator : MonoBehaviour
     public void GenerateTrack()
     {
         ClearTrack();
-        seed = (int)(System.DateTime.Now.Ticks % int.MaxValue);
-        Random.InitState(seed);
-        _trackPoints3D = CreateRacetrack(generate3DTrack);
-        if (_trackPoints3D != null && _trackPoints3D.Count > 2)
+        _seed = (int)(System.DateTime.Now.Ticks % int.MaxValue);
+        Random.InitState(_seed);
+        
+        _trackPoints = CreateRacetrack();
+        
+        if (_trackPoints != null && _trackPoints.Count > 2)
         {
-            GenerateRoadMesh(_trackPoints3D);
+            GenerateRoadMesh(_trackPoints);
+            GenerateCheckpoints(_trackPoints);
+            onTrackGenerated.Invoke();
+            Debug.Log($"Track generated with seed: {_seed}. Checkpoints: {checkpointsPerLap}");
         }
         else
         {
@@ -74,16 +86,21 @@ public class TrackGenerator : MonoBehaviour
         }
         if (mc != null) mc.sharedMesh = null;
 
-        _trackPoints3D = null;
+        foreach (var cp in _checkpoints)
+        {
+            if (Application.isPlaying) Destroy(cp);
+            else DestroyImmediate(cp);
+        }
+        _checkpoints.Clear();
+
+        _trackPoints = null;
         _refinedPoints = null;
 
         Debug.Log("Track cleared.");
     }
 
-    public List<Vector3> CreateRacetrack(bool is3D)
+    public List<Vector3> CreateRacetrack()
     {
-        heightMap = GenerateNoise(2);
-
         List<Vector2> basePoints = null;
         int attempts = 0;
         const int maxAttempts = 100000;
@@ -92,9 +109,9 @@ public class TrackGenerator : MonoBehaviour
         {
             if (attempts > 0)
             {
-                seed = Random.Range(0, int.MaxValue);
-                Random.InitState(seed);
-                Debug.Log($"Attempting new track with seed: {seed} (Attempt {attempts + 1})");
+                _seed = Random.Range(0, int.MaxValue);
+                Random.InitState(_seed);
+                Debug.Log($"Attempting new track with seed: {_seed} (Attempt {attempts + 1})");
             }
 
             var randomPoints = new List<Vector2>();
@@ -130,18 +147,36 @@ public class TrackGenerator : MonoBehaviour
         } while (!ValidateTrackAnglesAndDistances(basePoints));
 
         _refinedPoints = CurveCorners(basePoints);
-
-        if (is3D)
-        {
-            var points3D = AddHeightToTrack(_refinedPoints);
-            points3D = SmoothTrackElevation(points3D, 3, 0.7f);
-            return points3D;
-        }
-
         return _refinedPoints.Select(p => new Vector3(p.x, 0, p.y)).ToList();
     }
 
     #region Track Shape Generation
+    private bool DoSegmentsIntersect(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4)
+    {
+        float d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+        
+        if (Mathf.Abs(d) < 0.0001f) return false;
+        
+        float t = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / d;
+        float u = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / d;
+        
+        return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+    }
+
+    private float DistancePointToSegment(Vector2 point, Vector2 lineStart, Vector2 lineEnd)
+    {
+        Vector2 line = lineEnd - lineStart;
+        float lineLength = line.magnitude;
+        
+        if (lineLength < 0.0001f)
+            return Vector2.Distance(point, lineStart);
+        
+        float t = Mathf.Clamp01(Vector2.Dot(point - lineStart, line) / (lineLength * lineLength));
+        Vector2 projection = lineStart + t * line;
+        
+        return Vector2.Distance(point, projection);
+    }
+
     private bool ValidateTrackAnglesAndDistances(List<Vector2> points)
     {
         if (points.Count < 3) return false;
@@ -152,7 +187,8 @@ public class TrackGenerator : MonoBehaviour
             Vector2 curr = points[i];
             Vector2 next = points[(i + 1) % points.Count];
 
-            if (Vector2.Distance(prev, curr) < roadWidth * 0.5f || Vector2.Distance(curr, next) < roadWidth * 0.5f)
+            if (Vector2.Distance(prev, curr) < roadWidth * 0.8f || 
+                Vector2.Distance(curr, next) < roadWidth * 0.8f)
                 return false;
 
             float angle = Vector2.Angle(curr - prev, next - curr);
@@ -162,11 +198,50 @@ public class TrackGenerator : MonoBehaviour
             for (int j = i + 2; j < points.Count + i - 1; j++)
             {
                 int index = j % points.Count;
-                if (index == i || index == (i - 1 + points.Count) % points.Count) continue;
-                if (Vector2.Distance(curr, points[index]) < roadWidth * 1.2f)
+                if (index == i || index == (i - 1 + points.Count) % points.Count) 
+                    continue;
+                
+                if (Vector2.Distance(curr, points[index]) < roadWidth * 1.5f)
                     return false;
             }
         }
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            Vector2 p1 = points[i];
+            Vector2 p2 = points[(i + 1) % points.Count];
+
+            for (int j = i + 2; j < points.Count; j++)
+            {
+                if (i == 0 && j == points.Count - 1) continue;
+                
+                Vector2 p3 = points[j];
+                Vector2 p4 = points[(j + 1) % points.Count];
+
+                if (DoSegmentsIntersect(p1, p2, p3, p4))
+                {
+                    return false;
+                }
+            }
+        }
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            Vector2 segStart = points[i];
+            Vector2 segEnd = points[(i + 1) % points.Count];
+
+            for (int j = 0; j < points.Count; j++)
+            {
+                if (j == i || j == (i + 1) % points.Count || 
+                    j == (i - 1 + points.Count) % points.Count)
+                    continue;
+
+                float dist = DistancePointToSegment(points[j], segStart, segEnd);
+                if (dist < roadWidth * 1.2f)
+                    return false;
+            }
+        }
+
         return true;
     }
 
@@ -175,6 +250,7 @@ public class TrackGenerator : MonoBehaviour
         if (points.Count < 3) return points;
 
         var refined = new List<Vector2>(points);
+        
         for (int i = 0; i < iterations; i++)
         {
             int longestEdgeIndex = -1;
@@ -202,7 +278,7 @@ public class TrackGenerator : MonoBehaviour
             Vector2 normal = new Vector2(-dir.y, dir.x);
 
             bool validPointFound = false;
-            for (int attempt = 0; attempt < 10; attempt++)
+            for (int attempt = 0; attempt < 15; attempt++)
             {
                 float disp = Random.Range(roadWidth * 1.5f, Mathf.Sqrt(maxEdgeLengthSq) * 0.4f);
                 if (Random.value < 0.5f) disp = -disp;
@@ -210,9 +286,14 @@ public class TrackGenerator : MonoBehaviour
                 Vector2 newPoint = mid + normal * disp;
 
                 if (IsHairpin(p1, newPoint, p2)) continue;
-                if (!IsPointTooCloseToTrack(refined, newPoint, roadWidth * 1.8f))
+                if (IsPointTooCloseToTrack(refined, newPoint, roadWidth * 2.0f)) continue;
+
+                var testRefined = new List<Vector2>(refined);
+                testRefined.Insert(longestEdgeIndex + 1, newPoint);
+                
+                if (ValidateTrackAnglesAndDistances(testRefined))
                 {
-                    refined.Insert(longestEdgeIndex + 1, newPoint);
+                    refined = testRefined;
                     validPointFound = true;
                     break;
                 }
@@ -220,6 +301,7 @@ public class TrackGenerator : MonoBehaviour
 
             if (!validPointFound) break;
         }
+        
         return refined;
     }
 
@@ -269,62 +351,44 @@ public class TrackGenerator : MonoBehaviour
     }
     #endregion
 
-    #region Mesh & Utilities
-    private float[,] GenerateNoise(int octaves)
+    #region Checkpoint & Mesh Generation
+    public List<GameObject> GetCheckpoints() => _checkpoints;
+
+    private void GenerateCheckpoints(List<Vector3> trackPoints)
     {
-        int xpix = Mathf.Max(1, (int)(xBounds.y - xBounds.x));
-        int ypix = Mathf.Max(1, (int)(yBounds.y - yBounds.x));
-        var noiseMap = new float[xpix, ypix];
-        float seedX = Random.Range(0f, 1000f);
-        float seedY = Random.Range(0f, 1000f);
+        if (checkpointPrefab == null || checkpointsPerLap <= 0) return;
 
-        for (int y = 0; y < ypix; y++)
-            for (int x = 0; x < xpix; x++)
-            {
-                float sampleX = (float)x / xpix * octaves + seedX;
-                float sampleY = (float)y / ypix * octaves + seedY;
-                noiseMap[x, y] = Mathf.PerlinNoise(sampleX, sampleY) * noiseScale;
-            }
-
-        return noiseMap;
-    }
-
-    private List<Vector3> AddHeightToTrack(List<Vector2> points2D)
-    {
-        var points3D = new List<Vector3>();
-        int xpix = Mathf.Max(1, (int)(xBounds.y - xBounds.x));
-        int ypix = Mathf.Max(1, (int)(yBounds.y - yBounds.x));
-
-        foreach (var p in points2D)
+        foreach (var cp in _checkpoints)
         {
-            int xi = Mathf.FloorToInt(Mathf.InverseLerp(xBounds.x, xBounds.y, p.x) * xpix);
-            int yi = Mathf.FloorToInt(Mathf.InverseLerp(yBounds.x, yBounds.y, p.y) * ypix);
-
-            xi = Mathf.Clamp(xi, 0, xpix - 1);
-            yi = Mathf.Clamp(yi, 0, ypix - 1);
-
-            float h = heightMap[xi, yi];
-            points3D.Add(new Vector3(p.x, h, p.y));
+            if (Application.isPlaying) Destroy(cp);
+            else DestroyImmediate(cp);
         }
-        return points3D;
-    }
+        _checkpoints.Clear();
 
-    private List<Vector3> SmoothTrackElevation(List<Vector3> points, int iterations, float blend)
-    {
-        for (int iter = 0; iter < iterations; iter++)
+        int interval = Mathf.Max(1, trackPoints.Count / checkpointsPerLap);
+        
+        for (int i = 0; i < checkpointsPerLap; i++)
         {
-            var smoothed = new List<Vector3>(points);
-            for (int i = 0; i < points.Count; i++)
+            int pointIndex = i * interval;
+            if (pointIndex >= trackPoints.Count) pointIndex = trackPoints.Count - 1;
+            
+            Vector3 pos = trackPoints[pointIndex];
+            Vector3 nextPoint = trackPoints[(pointIndex + 1) % trackPoints.Count];
+            Vector3 forward = (nextPoint - pos).normalized;
+            Quaternion rotation = Quaternion.LookRotation(forward, Vector3.up);
+            
+            GameObject cpObject = Instantiate(checkpointPrefab, pos + Vector3.up * 5f, rotation, transform);
+            cpObject.name = $"Checkpoint_{i}";
+            
+            Checkpoint cp = cpObject.GetComponent<Checkpoint>();
+            if (cp != null)
             {
-                Vector3 prev = points[(i - 1 + points.Count) % points.Count];
-                Vector3 curr = points[i];
-                Vector3 next = points[(i + 1) % points.Count];
-                float y = (prev.y + curr.y + next.y) / 3f;
-                smoothed[i] = new Vector3(curr.x, Mathf.Lerp(curr.y, y, blend), curr.z);
+                cp.checkpointIndex = i;
+                cp.isFinishLine = (i == checkpointsPerLap - 1);
             }
-            points = smoothed;
+            
+            _checkpoints.Add(cpObject);
         }
-        return points;
     }
 
     private void GenerateRoadMesh(List<Vector3> points)
@@ -386,7 +450,6 @@ public class TrackGenerator : MonoBehaviour
         mesh.uv = uvs.ToArray();
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
-        mesh.RecalculateTangents();
 
         mf.sharedMesh = mesh;
         mc.sharedMesh = mesh;
@@ -437,25 +500,25 @@ public class TrackGenerator : MonoBehaviour
             Gizmos.color = Color.yellow;
             for (int i = 0; i < _refinedPoints.Count; i++)
             {
-                int nextIndex = (i + 1) % _refinedPoints.Count;
-
-                Vector3 p1, p2;
-                if (_trackPoints3D != null && _trackPoints3D.Count > i && _trackPoints3D.Count > nextIndex)
-                {
-                    p1 = _trackPoints3D[i];
-                    p2 = _trackPoints3D[nextIndex];
-                }
-                else
-                {
-                    p1 = new Vector3(_refinedPoints[i].x, 0, _refinedPoints[i].y);
-                    p2 = new Vector3(_refinedPoints[nextIndex].x, 0, _refinedPoints[nextIndex].y);
-                }
-
+                Vector3 p1 = new Vector3(_refinedPoints[i].x, 0, _refinedPoints[i].y);
+                Vector3 p2 = new Vector3(_refinedPoints[(i + 1) % _refinedPoints.Count].x, 0, _refinedPoints[(i + 1) % _refinedPoints.Count].y);
                 Gizmos.DrawSphere(p1, 1f);
                 Gizmos.DrawLine(p1, p2);
             }
         }
+
+        if (showCheckpointsInEditor && !Application.isPlaying)
+        {
+            foreach (var cp in _checkpoints)
+            {
+                if (cp == null) continue;
+                Checkpoint checkpoint = cp.GetComponent<Checkpoint>();
+                Gizmos.color = checkpoint.isFinishLine ? Color.red : Color.green;
+                Gizmos.DrawCube(cp.transform.position, Vector3.one * 5f);
+            }
+        }
     }
+    #endregion
 }
 
 #if UNITY_EDITOR
@@ -475,6 +538,9 @@ public class TrackGeneratorEditor : Editor
         EditorGUILayout.IntField("Current Seed", tg.seed);
         GUI.enabled = true;
 
+        EditorGUILayout.PropertyField(serializedObject.FindProperty("checkpointPrefab"));
+        serializedObject.ApplyModifiedProperties();
+
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Generate Track"))
         {
@@ -490,7 +556,13 @@ public class TrackGeneratorEditor : Editor
             SceneView.RepaintAll();
         }
         GUILayout.EndHorizontal();
+
+        EditorGUILayout.HelpBox(
+            "1. Create a Checkpoint prefab with Trigger Collider and Checkpoint.cs\n" +
+            "2. Assign it above\n" +
+            "3. Ensure cars have 'Player' tag and PlayerRaceController.cs",
+            MessageType.Info
+        );
     }
 }
 #endif
-#endregion
