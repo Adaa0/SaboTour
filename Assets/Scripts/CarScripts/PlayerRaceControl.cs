@@ -67,5 +67,6 @@ public class PlayerRaceController : MonoBehaviour
     {
         isRacing = false;
         Debug.Log($"{name} FINISHED THE RACE!");
+        LapCount.text = "FİNİSHED!";
     }
 }
