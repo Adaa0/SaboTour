@@ -47,14 +47,44 @@ public class ThirdPersonMovement : MonoBehaviour
     {
         controller = GetComponent<CharacterController>();
         
+        // Animator otomatik bul
         if (animator == null)
         {
             animator = GetComponentInChildren<Animator>();
+            if (animator != null)
+            {
+                Debug.Log("Animator otomatik bulundu: " + animator.gameObject.name);
+            }
+            else
+            {
+                Debug.LogWarning("Animator bulunamadı! Karakter modelinde Animator component'i olmalı.");
+            }
         }
 
+        // Kamera otomatik bul
         if (cameraTransform == null)
         {
-            cameraTransform = Camera.main.transform;
+            // Önce MainCamera tag'li kamerayı ara
+            Camera mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                cameraTransform = mainCam.transform;
+                Debug.Log("Ana kamera otomatik bulundu: " + cameraTransform.gameObject.name);
+            }
+            else
+            {
+                // MainCamera tag'i yoksa ThirdPersonCamera script'ini ara
+                ThirdPersonCamera tpCamera = FindAnyObjectByType<ThirdPersonCamera>();
+                if (tpCamera != null)
+                {
+                    cameraTransform = tpCamera.transform;
+                    Debug.Log("ThirdPersonCamera otomatik bulundu: " + cameraTransform.gameObject.name);
+                }
+                else
+                {
+                    Debug.LogError("Kamera bulunamadı! Sahnede 'MainCamera' tag'li kamera veya ThirdPersonCamera script'i olmalı.");
+                }
+            }
         }
     }
 
@@ -84,6 +114,9 @@ public class ThirdPersonMovement : MonoBehaviour
         // Hareket var mı?
         if (direction.magnitude >= 0.1f)
         {
+            // Kamera yoksa hareket etme
+            if (cameraTransform == null) return;
+
             // Karakteri kamera yönüne göre döndür
             float targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + cameraTransform.eulerAngles.y;
             float smoothAngle = Mathf.SmoothDampAngle(transform.eulerAngles.y, targetAngle, ref turnSmoothVelocity, turnSmoothTime);

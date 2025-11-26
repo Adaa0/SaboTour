@@ -2,11 +2,15 @@ using UnityEngine;
 
 public class ThirdPersonCamera : MonoBehaviour
 {
+    [Header("Target Settings")]
     public Transform target;
+    
+    [Header("Camera Settings")]
     public Vector3 offset = new Vector3(0f, 2f, -4f);
     public float sensitivity = 3f;
     public float rotationSmoothTime = 0.1f;
 
+    [Header("Rotation Limits")]
     public float minY = -30f;
     public float maxY = 60f;
 
@@ -17,6 +21,21 @@ public class ThirdPersonCamera : MonoBehaviour
 
     void Start()
     {
+        // Target otomatik bul
+        if (target == null)
+        {
+            ThirdPersonMovement player = FindAnyObjectByType<ThirdPersonMovement>();
+            if (player != null)
+            {
+                target = player.transform;
+                Debug.Log("Kamera target'i otomatik bulundu: " + target.gameObject.name);
+            }
+            else
+            {
+                Debug.LogError("Target bulunamadı! Sahnede ThirdPersonMovement script'li karakter olmalı.");
+            }
+        }
+        
         LockCursor();
     }
 
@@ -27,6 +46,13 @@ public class ThirdPersonCamera : MonoBehaviour
 
     void LateUpdate()
     {
+        // Target yoksa çalışma
+        if (target == null)
+        {
+            Debug.LogWarning("Kamera target'i atanmamış!");
+            return;
+        }
+        
         if (Cursor.lockState != CursorLockMode.Locked) return;
 
         yaw += Input.GetAxis("Mouse X") * sensitivity;
