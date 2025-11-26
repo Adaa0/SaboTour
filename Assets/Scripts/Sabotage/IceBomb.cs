@@ -45,10 +45,10 @@ public class IceBomb : MonoBehaviour
         GameObject ice = Instantiate(icePatchPrefab, transform.position, Quaternion.identity);
 
         // Random scale & rotation
-       float s = Random.Range(3f, 8f);
+       float s = Random.Range(25f, 30f);
        ice.transform.localScale = new Vector3(s, s, s);
        ice.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-       ice.transform.position = new Vector3(ice.transform.position.x, 0.001f, ice.transform.position.z);
+       ice.transform.position = new Vector3(ice.transform.position.x, 0.02f, ice.transform.position.z);
 
         Destroy(gameObject);
     }

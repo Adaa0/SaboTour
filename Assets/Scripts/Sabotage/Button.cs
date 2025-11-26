@@ -54,6 +54,17 @@ public class PhysicalButton : MonoBehaviour
         CheckInteraction();
         HandleInput();
         AnimateButton();
+
+        // --------------------------
+        //      CHECKPOINT SEÇME
+        // --------------------------
+        for (int i = 0; i <= 9; i++)
+        {
+            if (Input.GetKeyDown(i.ToString()))
+            {
+                SelectCheckpointByNumber(i);
+            }
+        }
     }
 
     void CheckInteraction()
@@ -92,15 +103,14 @@ public class PhysicalButton : MonoBehaviour
     {
         isPressed = true;
         
-        // Prefab oluştur
         if (prefabToSpawn != null && spawnPoint != null)
         {
             Instantiate(prefabToSpawn, spawnPoint.position, spawnPoint.rotation);
-            Debug.Log("Prefab oluşturuldu!");
+            Debug.Log("Prefab oluşturuldu! SpawnPoint = " + spawnPoint.name);
         }
         else
         {
-            Debug.LogWarning("Prefab veya spawn noktası atanmamış!");
+            Debug.LogWarning("Prefab veya spawnPoint yok!");
         }
 
         Invoke(nameof(ReleaseButton), 1f);
@@ -140,5 +150,28 @@ public class PhysicalButton : MonoBehaviour
             Gizmos.color = canInteract ? Color.green : Color.red;
             Gizmos.DrawLine(mainCamera.transform.position, transform.position);
         }
+    }
+
+    // ==================================================
+    //          CHECKPOINT SEÇME KISMI
+    // ==================================================
+    public void SelectCheckpointByNumber(int num)
+    {
+        CheckpointManager manager = FindAnyObjectByType<CheckpointManager>();
+
+        if (manager == null)
+        {
+            Debug.LogWarning("CheckpointManager bulunamadı!");
+            return;
+        }
+
+        if (num < 0 || num >= manager.checkpoints.Count)
+        {
+            Debug.LogWarning(num + " numaralı checkpoint yok.");
+            return;
+        }
+
+        spawnPoint = manager.checkpoints[num];
+        Debug.Log("SpawnPoint = Checkpoint " + num);
     }
 }
