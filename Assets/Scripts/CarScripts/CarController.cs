@@ -1,4 +1,5 @@
 using UnityEngine;
+
 public class CarController : MonoBehaviour
 {
     #region 1. Referanslar (Diğer Nesneler)
@@ -48,11 +49,14 @@ public class CarController : MonoBehaviour
     [SerializeField] private float dragCoefficent = 2f; 
     [SerializeField] private float brakingDeceleration = 150f; 
     [SerializeField] private float brakingDragCoefficent = 1f;
-    [SerializeField] private float speedLimiter = 0.95f; // Max hıza yaklaşınca kuvvet azalır
 
+    [Header("Motor Tork Ayarları")]
+    [SerializeField] private AnimationCurve motorTorqueCurve; // X: 0-1 (hız oranı), Y: tork çarpanı (örn: 0.2 hızda 1.5x güç)
+    [SerializeField] private float torqueMultiplier = 1.5f; // Motor tork çarpanı
    
     private Vector3 currentCarLocalVelocity = Vector3.zero; 
-    private float carVelocityRatio = 0; 
+    private float carVelocityRatio = 0;
+    public float currentSpeed = 0f; // km/h cinsinden gerçek hız
 
     #endregion
 
@@ -93,8 +97,6 @@ public class CarController : MonoBehaviour
 
     #endregion
 
-   
-
     #region Unity'nin Ana Fonksiyonları
 
     private void Awake()
@@ -102,6 +104,12 @@ public class CarController : MonoBehaviour
         if (carRB == null)
         {
             carRB = GetComponent<Rigidbody>();
+        }
+        
+        // Eğer motor tork eğrisi atanmamışsa varsayılan bir eğri oluştur
+        if (motorTorqueCurve == null || motorTorqueCurve.keys.Length == 0)
+        {
+            motorTorqueCurve = AnimationCurve.EaseInOut(0f, 1.5f, 1f, 0.3f);
         }
     }
 
@@ -114,10 +122,12 @@ public class CarController : MonoBehaviour
         Movement();
         ApplyDragAndResistance();
     }
+    
     private void Update()
     {
         GetPlayerInput();
     }
+    
     #endregion
 
     #region Girdi Alma Fonksiyonu
@@ -127,6 +137,7 @@ public class CarController : MonoBehaviour
         moveInput = Input.GetAxis("Vertical");
         steerInput = Input.GetAxis("Horizontal");
     }
+    
     #endregion
 
     #region Hareket Fonksiyonları
@@ -142,30 +153,40 @@ public class CarController : MonoBehaviour
             ApplyHandbrakeEffect();
         }
     }
+    
     private void Acceleration()
     {
-        float currentSpeed = Mathf.Abs(currentCarLocalVelocity.z);
+        // Gerçek hızı hesapla (km/h)
+        currentSpeed = Mathf.Abs(currentCarLocalVelocity.z) * 3.6f;
         
-        // Max speed'e yaklaştıkça kuvveti azalt (gerçekçi motor davranışı)
-        if (currentSpeed < maxSpeed)
+        // Hız oranını hesapla (0-1 arası)
+        float speedRatio = currentSpeed / maxSpeed;
+        
+        // Motor tork eğrisinden güç çarpanını al
+        // Düşük hızda yüksek tork, yüksek hızda düşük tork
+        float torqueFromCurve = motorTorqueCurve.Evaluate(speedRatio);
+        
+        // Max speed sınırlaması - hıza yaklaştıkça güç exponansiyel azalır
+        float speedLimiter = 1f;
+        if (currentSpeed >= maxSpeed * 0.95f)
         {
-            // Speed ratio'ya göre kuvvet azaltma (0-1 arası)
-            float speedRatio = currentSpeed / maxSpeed;
-            
             // Max speed'in %95'inden sonra güç hızla düşer
-            float powerMultiplier = 1f;
-            if (speedRatio > speedLimiter)
-            {
-                // Kalan %5'lik kısımda güç exponansiyel azalır
-                float remainingRatio = (1f - speedRatio) / (1f - speedLimiter);
-                powerMultiplier = Mathf.Pow(remainingRatio, 2); // Quadratic falloff
-            }
-            
-            // Acceleration değerinden bağımsız şekilde max speed'i zorla
-            float finalAcceleration = acceleration * moveInput * powerMultiplier;
-            carRB.AddForceAtPosition(finalAcceleration * transform.forward, accelerationPoint.position, ForceMode.Acceleration);
+            float overspeedRatio = (currentSpeed - maxSpeed * 0.95f) / (maxSpeed * 0.05f);
+            speedLimiter = Mathf.Pow(1f - Mathf.Clamp01(overspeedRatio), 3f);
         }
+        
+        // Eğer max speed'i aştıysak hiç güç uygulama
+        if (currentSpeed >= maxSpeed)
+        {
+            speedLimiter = 0f;
+        }
+        
+        // Final güç hesaplaması: base acceleration * input * tork eğrisi * tork çarpanı * hız limiti
+        float finalAcceleration = acceleration * moveInput * torqueFromCurve * torqueMultiplier * speedLimiter;
+        
+        carRB.AddForceAtPosition(finalAcceleration * transform.forward, accelerationPoint.position, ForceMode.Acceleration);
     }
+    
     private void Decelration()
     {
         if (Mathf.Abs(moveInput) < 0.1f || Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio))
@@ -175,6 +196,7 @@ public class CarController : MonoBehaviour
             carRB.AddForce(decelPower * Mathf.Abs(carVelocityRatio) * decelerationDirection, ForceMode.Acceleration);
         }
     }
+    
     private void Turn()
     {
         float steeringMultiplier = 1f;
@@ -185,6 +207,7 @@ public class CarController : MonoBehaviour
         carRB.AddRelativeTorque(steerStrength * steerInput * turningCurve.Evaluate(Mathf.Abs(carVelocityRatio)) *
          Mathf.Sign(carVelocityRatio) * steeringMultiplier * carRB.transform.up, ForceMode.Acceleration);
     }
+    
     private void SidewaysDrag()
     {
         float currentSidewaySpeed = currentCarLocalVelocity.x;
@@ -196,6 +219,7 @@ public class CarController : MonoBehaviour
 
         carRB.AddForceAtPosition(dragForce, carRB.worldCenterOfMass, ForceMode.Acceleration);
     }
+    
     private void ApplyHandbrakeEffect()
     {
         if (Input.GetKey(KeyCode.Space))
@@ -249,6 +273,7 @@ public class CarController : MonoBehaviour
             carRB.AddForce(-carRB.linearVelocity * airDrag, ForceMode.Acceleration);
         }
     }
+    
     #endregion
 
     #region Görsel Fonksiyonlar
@@ -319,6 +344,7 @@ public class CarController : MonoBehaviour
     {
         tire.transform.position = targetPosition;
     }
+    
     #endregion
 
     #region Araba Durum Kontrolleri
@@ -354,7 +380,6 @@ public class CarController : MonoBehaviour
 
     private void Suspension()
     {
-
         for (int i = 0; i < rayPoints.Length; i++)
         {
             RaycastHit hit;
@@ -375,7 +400,6 @@ public class CarController : MonoBehaviour
                 float gripReduction = Input.GetKey(KeyCode.Space) && i >= 2 ?
                     Mathf.Lerp(1f, handbrakeGripReduction, currentHandbrakeEffect) : 1f;
 
-
                 float currentSpringStiffness = springStiffness * gripReduction;
                 float springForce = currentSpringStiffness * springCompression;
 
@@ -384,7 +408,6 @@ public class CarController : MonoBehaviour
                 carRB.AddForceAtPosition(netForce * rayPoints[i].up, rayPoints[i].position);
 
                 SetTirePosition(tires[i], hit.point + rayPoints[i].up * wheelRadius);
-
 
                 Debug.DrawLine(rayPoints[i].position, hit.point, Color.green);
             }
@@ -398,5 +421,6 @@ public class CarController : MonoBehaviour
             }
         }
     }
+    
     #endregion
 }
