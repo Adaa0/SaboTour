@@ -129,5 +129,5 @@ MonoBehaviour:
   normalMat: {fileID: 2100000, guid: 4f18d6b8e83db40488246c6f26602ed5, type: 2}
   flashMat: {fileID: 2100000, guid: 699f2892cdd12204b96ef017b0695440, type: 2}
   flashSpeed: 0.15
-  explosionRadius: 20
-  explosionForce: 100
+  explosionRadius: 100
+  explosionForce: 25000

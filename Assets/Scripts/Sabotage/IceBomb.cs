@@ -11,8 +11,8 @@ public class IceBomb : MonoBehaviour
     public float flashSpeed = 0.15f;
 
     [Header("Explosion Settings")]
-    public float explosionRadius = 6f;
-    public float explosionForce = 25f;
+    public float explosionRadius = 100f;
+    public float explosionForce = 25000f;
 
     private Renderer rend;
     private bool flashing = true;
@@ -42,11 +42,10 @@ public class IceBomb : MonoBehaviour
     {
         flashing = false;
 
-        // Ice patch oluştur
         GameObject ice = Instantiate(icePatchPrefab, transform.position, Quaternion.identity);
 
-        float s = Random.Range(25f, 30f);
-        ice.transform.localScale = new Vector3(s, s, s);
+        float s = Random.Range(50f, 60f);
+        ice.transform.localScale = new Vector3(s, s, 0.0001f);
         ice.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         ice.transform.position = new Vector3(ice.transform.position.x, 0.02f, ice.transform.position.z);
 
@@ -57,11 +56,15 @@ public class IceBomb : MonoBehaviour
             Rigidbody rb = hit.attachedRigidbody;
             if (rb != null)
             {
+                float dist = Vector3.Distance(transform.position, hit.transform.position);
+                float t = Mathf.Clamp01(1f - (dist / explosionRadius));  
+                float finalForce = explosionForce * t;
+
                 Vector3 dir = (hit.transform.position - transform.position).normalized;
-                rb.AddForce(dir * explosionForce, ForceMode.Impulse);
+                rb.AddForce(dir * finalForce, ForceMode.Impulse);
             }
         }
-        
+
         Destroy(gameObject);
     }
 }

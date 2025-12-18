@@ -35,6 +35,7 @@ public class CarController : MonoBehaviour
 
     private float moveInput = 0; 
     private float steerInput = 0; 
+    private bool isHandbrakePressed = false; // Cache için
 
     #endregion
 
@@ -51,12 +52,19 @@ public class CarController : MonoBehaviour
     [SerializeField] private float brakingDragCoefficent = 1f;
 
     [Header("Motor Tork Ayarları")]
-    [SerializeField] private AnimationCurve motorTorqueCurve; // X: 0-1 (hız oranı), Y: tork çarpanı (örn: 0.2 hızda 1.5x güç)
-    [SerializeField] private float torqueMultiplier = 1.5f; // Motor tork çarpanı
+    [SerializeField] private AnimationCurve motorTorqueCurve;
+    [SerializeField] private float torqueMultiplier = 1.5f;
    
     private Vector3 currentCarLocalVelocity = Vector3.zero; 
     private float carVelocityRatio = 0;
-    public float currentSpeed = 0f; // km/h cinsinden gerçek hız
+    public float currentSpeed = 0f;
+
+    [Header("Durma Ayarları")]
+    [SerializeField] private float stopThreshold = 0.5f; // Bu hızın altında araba tamamen durur
+    [SerializeField] private float autoStopForce = 5f; // Otomatik durma kuvveti
+    [SerializeField] private float minSpeedForMovement = 0.1f; // Minimum hareket hızı
+    [SerializeField] private float lowSpeedDragMultiplier = 3f; // Düşük hızda ekstra yavaşlama çarpanı
+    [SerializeField] private float lowSpeedThreshold = 20f; // Bu hızın altında ekstra yavaşlama aktif (km/h)
 
     #endregion
 
@@ -84,16 +92,37 @@ public class CarController : MonoBehaviour
     [Header("El Freni Ayarları")]
 
     [SerializeField] private float handbrakeIntensity = 0.3f; 
-    [SerializeField] private float handbrakeSidewaysDragReduction = 0.1f; 
-    [SerializeField] private float handbrakeGripReduction = 0.5f; 
-    [SerializeField] private float handbrakeMaxSlideSpeed = 30f; 
-    [SerializeField] private float handbrakeDriftAssist = 0.8f; 
-    [SerializeField] private float handbrakeSpeedMultiplier = 2f; 
+    [SerializeField] private float handbrakeSidewaysDragReduction = 0.3f; 
+    [SerializeField] private float handbrakeGripReduction = 0.3f; 
+    [SerializeField] private float handbrakeMaxSlideSpeed = 50f; 
+    [SerializeField] private float handbrakeDriftAssist = 1.2f; 
+    [SerializeField] private float handbrakeSpeedMultiplier = 1.5f; 
     [SerializeField] private float handbrakeRecoverySpeed = 5f; 
+    [SerializeField] private float handbrakeMinSpeed = 5f; 
 
    
     private float currentHandbrakeEffect = 0f; 
     private Vector3 handbrakeSlideDirection = Vector3.zero; 
+
+    #endregion
+
+    #region 8. BUZ MEKANİĞİ (GÜNCELLENDİ)
+    
+    [Header("Buz / Kaygan Zemin Ayarları")]
+    [Tooltip("Buz zemini olarak algılanacak Tag adı")]
+    [SerializeField] private string iceTag = "Ice"; 
+    
+    [Tooltip("Buzdayken yan sürtünme ne kadar düşecek? (Düşük değer = Sabun gibi kayma)")]
+    [SerializeField] private float iceSidewaysDrag = 0.05f; 
+    
+    [Tooltip("Buzdayken direksiyon hakimiyeti ne kadar bozulacak? (1 = Normal, 2 = Aşırı Dönüş)")]
+    [SerializeField] private float iceSteeringChaosMultiplier = 1.5f;
+
+    [Tooltip("Buzdayken hızlanma ne kadar zorlaşacak? (Patinaj etkisi)")]
+    [SerializeField] private float iceAccelerationGrip = 0.3f;
+
+    private bool isCarOnIce = false;
+    private bool externalIceTrigger = false; // IceSlide.cs tarafından tetiklenen değişken
 
     #endregion
 
@@ -106,7 +135,6 @@ public class CarController : MonoBehaviour
             carRB = GetComponent<Rigidbody>();
         }
         
-        // Eğer motor tork eğrisi atanmamışsa varsayılan bir eğri oluştur
         if (motorTorqueCurve == null || motorTorqueCurve.keys.Length == 0)
         {
             motorTorqueCurve = AnimationCurve.EaseInOut(0f, 1.5f, 1f, 0.3f);
@@ -121,6 +149,7 @@ public class CarController : MonoBehaviour
         Suspension();
         Movement();
         ApplyDragAndResistance();
+        CheckAndStop(); 
     }
     
     private void Update()
@@ -136,6 +165,7 @@ public class CarController : MonoBehaviour
     {
         moveInput = Input.GetAxis("Vertical");
         steerInput = Input.GetAxis("Horizontal");
+        isHandbrakePressed = Input.GetKey(KeyCode.Space); 
     }
     
     #endregion
@@ -156,33 +186,31 @@ public class CarController : MonoBehaviour
     
     private void Acceleration()
     {
-        // Gerçek hızı hesapla (km/h)
         currentSpeed = Mathf.Abs(currentCarLocalVelocity.z) * 3.6f;
         
-        // Hız oranını hesapla (0-1 arası)
         float speedRatio = currentSpeed / maxSpeed;
-        
-        // Motor tork eğrisinden güç çarpanını al
-        // Düşük hızda yüksek tork, yüksek hızda düşük tork
         float torqueFromCurve = motorTorqueCurve.Evaluate(speedRatio);
         
-        // Max speed sınırlaması - hıza yaklaştıkça güç exponansiyel azalır
         float speedLimiter = 1f;
         if (currentSpeed >= maxSpeed * 0.95f)
         {
-            // Max speed'in %95'inden sonra güç hızla düşer
             float overspeedRatio = (currentSpeed - maxSpeed * 0.95f) / (maxSpeed * 0.05f);
             speedLimiter = Mathf.Pow(1f - Mathf.Clamp01(overspeedRatio), 3f);
         }
         
-        // Eğer max speed'i aştıysak hiç güç uygulama
         if (currentSpeed >= maxSpeed)
         {
             speedLimiter = 0f;
         }
+
+        // BUZ ETKİSİ: Eğer buzdaysak hızlanma kuvveti (grip) azalır, patinaj hissi verir
+        float currentAcceleration = acceleration;
+        if (isCarOnIce)
+        {
+            currentAcceleration *= iceAccelerationGrip;
+        }
         
-        // Final güç hesaplaması: base acceleration * input * tork eğrisi * tork çarpanı * hız limiti
-        float finalAcceleration = acceleration * moveInput * torqueFromCurve * torqueMultiplier * speedLimiter;
+        float finalAcceleration = currentAcceleration * moveInput * torqueFromCurve * torqueMultiplier * speedLimiter;
         
         carRB.AddForceAtPosition(finalAcceleration * transform.forward, accelerationPoint.position, ForceMode.Acceleration);
     }
@@ -191,7 +219,21 @@ public class CarController : MonoBehaviour
     {
         if (Mathf.Abs(moveInput) < 0.1f || Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio))
         {
-            float decelPower = Input.GetKey(KeyCode.Space) ? brakingDeceleration : deceleration;
+            float decelPower = isHandbrakePressed ? brakingDeceleration : deceleration;
+            
+            // Düşük hızlarda yavaşlamayı artır
+            if (currentSpeed < lowSpeedThreshold)
+            {
+                float lowSpeedBoost = 1f + (1f - currentSpeed / lowSpeedThreshold) * 2f;
+                decelPower *= lowSpeedBoost;
+            }
+
+            // BUZ ETKİSİ: Buzdayken frenler çok daha az tutar
+            if (isCarOnIce)
+            {
+                decelPower *= 0.2f; // Fren gücünü %80 azalt
+            }
+            
             Vector3 decelerationDirection = -transform.forward * Mathf.Sign(carVelocityRatio);
             carRB.AddForce(decelPower * Mathf.Abs(carVelocityRatio) * decelerationDirection, ForceMode.Acceleration);
         }
@@ -200,10 +242,19 @@ public class CarController : MonoBehaviour
     private void Turn()
     {
         float steeringMultiplier = 1f;
-        if (Input.GetKey(KeyCode.Space))
+        
+        if (isHandbrakePressed)
         {
             steeringMultiplier = 1f + (currentHandbrakeEffect * 0.5f);
         }
+
+        // BUZ ETKİSİ: Buzdayken araba dönmeye çalışınca arkası daha kaotik savrulur
+        if (isCarOnIce)
+        {
+            // Dönüş torkunu artırıyoruz (oversteer) ama kontrolsüz hissettiriyoruz
+            steeringMultiplier *= iceSteeringChaosMultiplier;
+        }
+
         carRB.AddRelativeTorque(steerStrength * steerInput * turningCurve.Evaluate(Mathf.Abs(carVelocityRatio)) *
          Mathf.Sign(carVelocityRatio) * steeringMultiplier * carRB.transform.up, ForceMode.Acceleration);
     }
@@ -211,9 +262,34 @@ public class CarController : MonoBehaviour
     private void SidewaysDrag()
     {
         float currentSidewaySpeed = currentCarLocalVelocity.x;
-        float dragCoefficient = Input.GetKey(KeyCode.Space) ?
-        brakingDragCoefficent * handbrakeSidewaysDragReduction * currentHandbrakeEffect :
-         dragCoefficent;
+        
+        float dragCoefficient;
+
+        // --- BUZ KONTROLÜ VE MANTIĞI ---
+        if (isCarOnIce)
+        {
+            // Buzdaysak sürtünme dramatik şekilde düşer (sabun etkisi)
+            dragCoefficient = iceSidewaysDrag;
+
+            // El freni çekiliyse buzda sürtünme neredeyse sıfır olur
+            if (isHandbrakePressed) dragCoefficient *= 0.5f;
+        }
+        else if (isHandbrakePressed)
+        {
+            // El freni: daha düşük drag = daha fazla kayma
+            dragCoefficient = brakingDragCoefficent * handbrakeSidewaysDragReduction;
+        }
+        else if (Mathf.Abs(moveInput) < 0.1f || Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio))
+        {
+            // Normal fren: standart drag
+            dragCoefficient = brakingDragCoefficent;
+        }
+        else
+        {
+            // Normal sürüş: normal drag
+            dragCoefficient = dragCoefficent;
+        }
+        
         float dragMagnitude = -currentSidewaySpeed * dragCoefficient;
         Vector3 dragForce = transform.right * dragMagnitude;
 
@@ -222,13 +298,16 @@ public class CarController : MonoBehaviour
     
     private void ApplyHandbrakeEffect()
     {
-        if (Input.GetKey(KeyCode.Space))
+        if (isHandbrakePressed && currentSpeed > handbrakeMinSpeed) 
         {
             float speedFactor = Mathf.Clamp01(Mathf.Abs(currentCarLocalVelocity.z) / maxSpeed);
             float intensity = handbrakeIntensity * speedFactor * handbrakeSpeedMultiplier;
+            
+            // Yandan kayma kuvvetini azalt (bu spin atmasını kolaylaştırır)
             Vector3 reducedSidewaysDrag = -currentCarLocalVelocity.x * handbrakeSidewaysDragReduction * transform.right;
             carRB.AddForce(reducedSidewaysDrag, ForceMode.Acceleration);
 
+            // Kayma yönünü belirle
             if (handbrakeSlideDirection == Vector3.zero)
             {
                 handbrakeSlideDirection = transform.right * Mathf.Sign(currentCarLocalVelocity.x);
@@ -238,6 +317,8 @@ public class CarController : MonoBehaviour
                 handbrakeSlideDirection = Vector3.Lerp(handbrakeSlideDirection,
                     transform.right * Mathf.Sign(currentCarLocalVelocity.x), Time.fixedDeltaTime * 5f);
             }
+            
+            // Kayma kuvvetini uygula
             Vector3 handbrakeSlideForce = handbrakeSlideDirection * intensity * 50f;
             float currentSlideSpeed = Vector3.Dot(carRB.linearVelocity, handbrakeSlideDirection);
 
@@ -247,9 +328,12 @@ public class CarController : MonoBehaviour
                 carRB.AddForceAtPosition(handbrakeSlideForce, rearWheelPosition, ForceMode.Acceleration);
             }
 
+            // Direksiyon varsa spin için tork ekle (artırıldı)
             if (steerInput != 0)
             {
-                float driftTorque = steerInput * handbrakeDriftAssist * intensity * 100f;
+                // Buzdaysa drift asisti daha da çılgın olur
+                float assistMultiplier = isCarOnIce ? 2.5f : 1.0f;
+                float driftTorque = steerInput * handbrakeDriftAssist * assistMultiplier * intensity * 100f;
                 carRB.AddTorque(transform.up * driftTorque, ForceMode.Acceleration);
             }
 
@@ -257,7 +341,10 @@ public class CarController : MonoBehaviour
         }
         else
         {
-            currentHandbrakeEffect = Mathf.Lerp(currentHandbrakeEffect, 0f, Time.fixedDeltaTime * handbrakeRecoverySpeed);
+            // Buzdaysa el freni etkisi daha yavaş kaybolur (kontrolü geri almak zordur)
+            float recovery = isCarOnIce ? handbrakeRecoverySpeed * 0.3f : handbrakeRecoverySpeed;
+            
+            currentHandbrakeEffect = Mathf.Lerp(currentHandbrakeEffect, 0f, Time.fixedDeltaTime * recovery);
             handbrakeSlideDirection = Vector3.Lerp(handbrakeSlideDirection, Vector3.zero, Time.fixedDeltaTime * 3f);
         }
     }
@@ -266,11 +353,50 @@ public class CarController : MonoBehaviour
     {
         if (isGrounded)
         {
-            carRB.AddForce(-carRB.linearVelocity * rollingResistance * Mathf.Abs(carVelocityRatio), ForceMode.Acceleration);
+            // Buzdaysa yuvarlanma direnci (sürtünme) çok azalır
+            float currentRollingResistance = isCarOnIce ? rollingResistance * 0.2f : rollingResistance;
+
+            float baseDrag = currentRollingResistance * Mathf.Abs(carVelocityRatio);
+            
+            // Düşük hızlarda ekstra yavaşlama (Buzda bu da azalır)
+            if (currentSpeed < lowSpeedThreshold && Mathf.Abs(moveInput) < 0.1f)
+            {
+                float lowSpeedFactor = 1f - (currentSpeed / lowSpeedThreshold);
+                float currentLowSpeedDrag = isCarOnIce ? lowSpeedDragMultiplier * 0.1f : lowSpeedDragMultiplier;
+                baseDrag += currentLowSpeedDrag * lowSpeedFactor;
+            }
+            
+            carRB.AddForce(-carRB.linearVelocity * baseDrag, ForceMode.Acceleration);
         }
         else
         {
             carRB.AddForce(-carRB.linearVelocity * airDrag, ForceMode.Acceleration);
+        }
+    }
+
+    // YENİ FONKSİYON - Otomatik Durma
+    private void CheckAndStop()
+    {
+        if (!isGrounded) return;
+
+        // Buzdaysa durma eşiği daha düşük olur (kaymaya devam eder)
+        float currentStopThreshold = isCarOnIce ? stopThreshold * 0.2f : stopThreshold;
+
+        // Hız çok düşükse ve input yoksa
+        if (currentSpeed < currentStopThreshold && Mathf.Abs(moveInput) < 0.1f)
+        {
+            // Hızı tamamen sıfırla
+            if (carRB.linearVelocity.magnitude < minSpeedForMovement)
+            {
+                carRB.linearVelocity = Vector3.zero;
+                carRB.angularVelocity = Vector3.zero;
+            }
+            else
+            {
+                // Yavaşça durdur
+                float stopForce = isCarOnIce ? autoStopForce * 0.2f : autoStopForce;
+                carRB.AddForce(-carRB.linearVelocity * stopForce, ForceMode.Acceleration);
+            }
         }
     }
     
@@ -289,6 +415,10 @@ public class CarController : MonoBehaviour
     private void TireVisuals()
     {
         float effectiveTireRotSpeed = tireRotSpeed;
+        
+        // Buzda patinaj atıyorsa tekerlekler daha hızlı döner görsel olarak
+        if(isCarOnIce && Mathf.Abs(moveInput) > 0.1f) effectiveTireRotSpeed *= 2f;
+
         float targetSteerAngle = maxSteeringAngle * steerInput;
 
         for (int i = 0; i < 2; i++)
@@ -312,7 +442,16 @@ public class CarController : MonoBehaviour
 
     private void Vfx()
     {
-        bool shouldShowEffects = isGrounded && Mathf.Abs(currentCarLocalVelocity.x) > minSideSkidVelocity && carVelocityRatio > 0;
+        // Buz üzerinde duman çıkmaz veya çok az çıkar, ama kayma izi mantığı burada:
+        // Buzda sürekli kaydığımız için eşiği düşürdük
+        float skidThreshold = isCarOnIce ? 2f : minSideSkidVelocity;
+
+        bool shouldShowEffects = isGrounded && 
+                                 (Mathf.Abs(currentCarLocalVelocity.x) > skidThreshold || 
+                                 (isHandbrakePressed && currentSpeed > 5f) ||
+                                 (isCarOnIce && Mathf.Abs(steerInput) > 0.5f)) && // Buzda dönerken efekt ver
+                                 carVelocityRatio > 0;
+        
         ToggleSkidMarks(shouldShowEffects);
         ToggleSkidSmokes(shouldShowEffects);
     }
@@ -321,7 +460,8 @@ public class CarController : MonoBehaviour
     {
         foreach (var skidMark in skidMarks)
         {
-            skidMark.emitting = toggle;
+            if (skidMark != null)
+                skidMark.emitting = toggle;
         }
     }
 
@@ -329,20 +469,26 @@ public class CarController : MonoBehaviour
     {
         foreach (var smoke in skidSmokes)
         {
-            if (toggle)
+            if (smoke != null)
             {
-                smoke.Play();
-            }
-            else
-            {
-                smoke.Stop();
+                if (toggle)
+                {
+                    if (!smoke.isPlaying)
+                        smoke.Play();
+                }
+                else
+                {
+                    if (smoke.isPlaying)
+                        smoke.Stop();
+                }
             }
         }
     }
 
     private void SetTirePosition(GameObject tire, Vector3 targetPosition)
     {
-        tire.transform.position = targetPosition;
+        if (tire != null)
+            tire.transform.position = targetPosition;
     }
     
     #endregion
@@ -380,6 +526,8 @@ public class CarController : MonoBehaviour
 
     private void Suspension()
     {
+        int wheelsOnIceCount = 0; // Kaç tekerlek buzda sayacı
+
         for (int i = 0; i < rayPoints.Length; i++)
         {
             RaycastHit hit;
@@ -389,15 +537,19 @@ public class CarController : MonoBehaviour
             {
                 wheelsIsGrounded[i] = 1;
 
+                // --- BUZ TESPİTİ (TAG) ---
+                if (hit.collider.CompareTag(iceTag))
+                {
+                    wheelsOnIceCount++;
+                }
+
                 float currentSpringLenght = hit.distance - wheelRadius;
-
                 float springCompression = (restLength - currentSpringLenght) / springTravel;
-
                 float springVelocity = Vector3.Dot(carRB.GetPointVelocity(rayPoints[i].position), rayPoints[i].up);
-
                 float dampForce = damperStiffness * springVelocity;
 
-                float gripReduction = Input.GetKey(KeyCode.Space) && i >= 2 ?
+                // El freni sadece arka tekerlekleri etkiler (i >= 2)
+                float gripReduction = isHandbrakePressed && i >= 2 ?
                     Mathf.Lerp(1f, handbrakeGripReduction, currentHandbrakeEffect) : 1f;
 
                 float currentSpringStiffness = springStiffness * gripReduction;
@@ -414,12 +566,13 @@ public class CarController : MonoBehaviour
             else
             {
                 wheelsIsGrounded[i] = 0;
-
                 SetTirePosition(tires[i], rayPoints[i].position - rayPoints[i].up * maxLength);
-
                 Debug.DrawLine(rayPoints[i].position, rayPoints[i].position + (wheelRadius + maxLength) * -rayPoints[i].up, Color.red);
             }
         }
+
+        // Eğer en az 1 tekerlek buzdaysa VEYA dışarıdan (IceSlide.cs) buz tetiklendiyse
+        isCarOnIce = (wheelsOnIceCount > 0) || externalIceTrigger;
     }
     
     #endregion
