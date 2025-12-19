@@ -5319,8 +5319,8 @@ MonoBehaviour:
   restLength: 0.75
   springTravel: 0.1
   wheelRadius: 0.6
-  acceleration: 25
-  maxSpeed: 300
+  acceleration: 15
+  maxSpeed: 180
   deceleration: 10
   steerStrength: 30
   turningCurve:
@@ -5374,70 +5374,9 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  dragCoefficent: 3
+  dragCoefficent: 0.8
   brakingDeceleration: 150
   brakingDragCoefficent: 1
-  motorTorqueCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0.35
-      inSlope: 0.75
-      outSlope: 0.75
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 0.2
-      value: 0.5
-      inSlope: 1.125
-      outSlope: 1.125
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 0.4
-      value: 0.8
-      inSlope: 1.25
-      outSlope: 1.25
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 0.6
-      value: 1
-      inSlope: -0.12500012
-      outSlope: -0.12500012
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 0.8
-      value: 0.75
-      inSlope: -1.75
-      outSlope: -1.75
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0.33333334
-    - serializedVersion: 3
-      time: 1
-      value: 0.3
-      inSlope: -2.25
-      outSlope: -2.25
-      tangentMode: 34
-      weightedMode: 0
-      inWeight: 0.33333334
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  torqueMultiplier: 1
   currentSpeed: 0
   stopThreshold: 0.5
   autoStopForce: 5
@@ -5447,16 +5386,13 @@ MonoBehaviour:
   tireRotSpeed: 3000
   maxSteeringAngle: 30
   minSideSkidVelocity: 8
-  airDrag: 0.2
-  rollingResistance: 3
-  handbrakeIntensity: 0.5
-  handbrakeSidewaysDragReduction: 0.15
-  handbrakeGripReduction: 0.3
-  handbrakeMaxSlideSpeed: 50
-  handbrakeDriftAssist: 20
-  handbrakeSpeedMultiplier: 1.5
-  handbrakeRecoverySpeed: 5
-  handbrakeMinSpeed: 5
+  airDrag: 0.1
+  rollingResistance: 0.5
+  driftGripReduction: 0.6
+  driftSteerBoost: 1.5
+  driftMinSpeed: 15
+  driftTransitionSpeed: 5
+  driftSpeedLoss: 0.85
   iceTag: Ice
   iceSidewaysDrag: 0.05
   iceSteeringChaosMultiplier: 1.5
