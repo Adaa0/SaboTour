@@ -125,9 +125,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IceBomb
   delay: 1.5
-  icePatchPrefab: {fileID: 7479653507301417951, guid: 2e11e06190e6c1a43b575f259f318a93, type: 3}
+  icePatchPrefab: {fileID: 8092128558806959148, guid: 2e11e06190e6c1a43b575f259f318a93, type: 3}
   normalMat: {fileID: 2100000, guid: 4f18d6b8e83db40488246c6f26602ed5, type: 2}
   flashMat: {fileID: 2100000, guid: 699f2892cdd12204b96ef017b0695440, type: 2}
   flashSpeed: 0.15
-  explosionRadius: 100
-  explosionForce: 25000
+  explosionRadius: 200
+  explosionForce: 50000

@@ -10,32 +10,31 @@ public class PlayerRaceController : MonoBehaviour
     private int currentLap = 0;
     public bool isRacing = true;
 
+    [Header("UI")]
     public TextMeshProUGUI LapCount;
+    public TextMeshProUGUI CheckpointInfo; // <-- YENİ
 
     public void Start()
     {
         if (LapCount == null)
             LapCount = GameObject.Find("LapCountText").GetComponent<TextMeshProUGUI>();
 
-        LapCount.text = "Lap : " + currentLap + " / " + maxLaps;
+        if (CheckpointInfo == null)
+            CheckpointInfo = GameObject.Find("CheckpointInfoText").GetComponent<TextMeshProUGUI>();
+
+        LapCount.text = $"Lap : {currentLap} / {maxLaps}";
+        UpdateCheckpointUI();
     }
 
     public void Initialize(int totalCheckpoints)
     {
-        if (totalCheckpoints <= 0)
-        {
-            Debug.LogError($"{name}: totalCheckpoints <= 0! Using fallback value 1.");
-            this.totalCheckpoints = 1;
-        }
-        else
-        {
-            this.totalCheckpoints = totalCheckpoints;
-        }
+        this.totalCheckpoints = totalCheckpoints <= 0 ? 1 : totalCheckpoints;
 
         currentCheckpoint = -1;
         currentLap = 0;
         isRacing = true;
 
+        UpdateCheckpointUI();
         Debug.Log($"{name} initialized with {this.totalCheckpoints} checkpoints.");
     }
 
@@ -46,14 +45,14 @@ public class PlayerRaceController : MonoBehaviour
         if (index == (currentCheckpoint + 1) % totalCheckpoints)
         {
             currentCheckpoint = index;
+            UpdateCheckpointUI();
+
             Debug.Log($"{name} reached checkpoint {index}");
 
             if (isFinishLine && index == totalCheckpoints - 1)
             {
                 currentLap++;
-                Debug.Log($"{name} completed lap {currentLap}/{maxLaps}");
-
-                LapCount.text = "Lap : " + currentLap + " / " + maxLaps;
+                LapCount.text = $"Lap : {currentLap} / {maxLaps}";
 
                 if (currentLap >= maxLaps)
                 {
@@ -63,10 +62,31 @@ public class PlayerRaceController : MonoBehaviour
         }
     }
 
+    private void UpdateCheckpointUI()
+{
+    if (CheckpointInfo == null) return;
+
+    int passed = currentCheckpoint; // -1 olabilir (başta)
+    int next = (currentCheckpoint + 1) % totalCheckpoints;
+
+    if (passed < 0)
+    {
+        CheckpointInfo.text =
+            $"Checkpoint: - / {totalCheckpoints - 1}\nNext: {next}";
+    }
+    else
+    {
+        CheckpointInfo.text =
+            $"Checkpoint: {passed} / {totalCheckpoints - 1}\nNext: {next}";
+    }
+}
+
+
     private void FinishRace()
     {
         isRacing = false;
+        LapCount.text = "FINISHED!";
+        CheckpointInfo.text = "Race Complete";
         Debug.Log($"{name} FINISHED THE RACE!");
-        LapCount.text = "FİNİSHED!";
     }
 }

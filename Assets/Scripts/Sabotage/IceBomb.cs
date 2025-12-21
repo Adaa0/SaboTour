@@ -44,9 +44,9 @@ public class IceBomb : MonoBehaviour
 
         GameObject ice = Instantiate(icePatchPrefab, transform.position, Quaternion.identity);
 
-        float s = Random.Range(50f, 60f);
-        ice.transform.localScale = new Vector3(s, s, 0.0001f);
-        ice.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        float s = Random.Range(5f, 10f);
+        ice.transform.localScale = new Vector3(s, s, s);
+        ice.transform.rotation = Quaternion.Euler(0f, 0f, 0f);
         ice.transform.position = new Vector3(ice.transform.position.x, 0.02f, ice.transform.position.z);
 
         Collider[] hits = Physics.OverlapSphere(transform.position, explosionRadius);

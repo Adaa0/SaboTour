@@ -5224,6 +5224,7 @@ GameObject:
   - component: {fileID: 4107960498316859284}
   - component: {fileID: 1824948303629796492}
   - component: {fileID: 118247748795154916}
+  - component: {fileID: 2466745690000224606}
   m_Layer: 0
   m_Name: Car
   m_TagString: Player
@@ -5275,7 +5276,7 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 1
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 0
   m_CollisionDetection: 0
 --- !u!114 &1824948303629796492
@@ -5413,6 +5414,21 @@ MonoBehaviour:
   maxLaps: 3
   isRacing: 1
   LapCount: {fileID: 0}
+  CheckpointInfo: {fileID: 0}
+--- !u!114 &2466745690000224606
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 19ceaf24d6f0a974d9c75bc3fe683e3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheckpointSpawner
+  prefabToSpawn: {fileID: 8385187716745718710, guid: 81c19dad76950aa48874a566ac2257f2, type: 3}
+  previewPrefab: {fileID: 4456444403391069399, guid: f9964b1ef7bbb5e41860bd9528006246, type: 3}
 --- !u!1 &4378018966892394989
 GameObject:
   m_ObjectHideFlags: 0
