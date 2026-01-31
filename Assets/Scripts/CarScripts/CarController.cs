@@ -46,7 +46,7 @@ public class CarController : MonoBehaviour
     [SerializeField] private float deceleration = 10f; 
     [SerializeField] private float steerStrength = 30f; 
     [SerializeField] private AnimationCurve turningCurve; 
-    [SerializeField] private float dragCoefficent = 0.8f; // DÜŞÜRÜLDÜ
+    [SerializeField] private float dragCoefficent = 0.8f;
     [SerializeField] private float brakingDeceleration = 150f; 
     [SerializeField] private float brakingDragCoefficent = 1f;
    
@@ -58,7 +58,7 @@ public class CarController : MonoBehaviour
     [SerializeField] private float stopThreshold = 0.5f; 
     [SerializeField] private float autoStopForce = 5f;
     [SerializeField] private float minSpeedForMovement = 0.1f;
-    [SerializeField] private float lowSpeedDragMultiplier = 2f; // DÜŞÜRÜLDÜ
+    [SerializeField] private float lowSpeedDragMultiplier = 2f;
     [SerializeField] private float lowSpeedThreshold = 20f;
 
     #endregion
@@ -75,21 +75,21 @@ public class CarController : MonoBehaviour
     #region 6. Diğer Fizik Ayarları
 
     [Header("Hava Sürtünmesi Ayarları")]
-    [SerializeField] private float airDrag = 0.1f; // DÜŞÜRÜLDÜ
-    [SerializeField] private float rollingResistance = 0.5f; // ÇOK DÜŞÜRÜLDÜ
+    [SerializeField] private float airDrag = 0.1f;
+    [SerializeField] private float rollingResistance = 0.5f;
 
     #endregion
 
     #region 7. El Freni Ayarları (Drift) - ARCADE TARZI
 
     [Header("El Freni Ayarları - Arcade Drift")]
-    [SerializeField] private float driftGripReduction = 0.6f; // Arka tekerleklerin tutuş kaybı (0-1)
-    [SerializeField] private float driftSteerBoost = 1.5f; // Drift sırasında direksiyon hassasiyeti çarpanı
-    [SerializeField] private float driftMinSpeed = 15f; // Minimum drift hızı (km/h)
-    [SerializeField] private float driftTransitionSpeed = 5f; // Drift geçiş hızı
-    [SerializeField] private float driftSpeedLoss = 0.85f; // Drift sırasında hız kaybı (1 = kayıp yok, 0 = tam kayıp)
+    [SerializeField] private float driftGripReduction = 0.6f;
+    [SerializeField] private float driftSteerBoost = 1.5f;
+    [SerializeField] private float driftMinSpeed = 15f;
+    [SerializeField] private float driftTransitionSpeed = 5f;
+    [SerializeField] private float driftSpeedLoss = 0.85f;
     
-    private float currentDriftFactor = 0f; // 0-1 arası drift yoğunluğu
+    private float currentDriftFactor = 0f;
     private bool isDrifting = false;
 
     #endregion
@@ -104,6 +104,15 @@ public class CarController : MonoBehaviour
 
     private bool isCarOnIce = false;
     private bool externalIceTrigger = false;
+
+    #endregion
+
+    #region 9. Gaz Kesildiğinde Otomatik Yavaşlama
+
+    [Header("Gaz Kesildiğinde Otomatik Yavaşlama")]
+    [SerializeField] private float coastingBrakeStrength = 35f;
+    [SerializeField] private float minSpeedForCoastingBrake = 5f;
+
     #endregion
 
     #region Unity'nin Ana Fonksiyonları
@@ -122,8 +131,8 @@ public class CarController : MonoBehaviour
         CalculateCarVelocity();
         Visuals();
         Suspension();
-        Movement(); // İlk önce hareket kuvvetleri uygulanır
-        ApplyDragAndResistance(); // Sonra sürtünme
+        Movement();
+        ApplyDragAndResistance();
         CheckAndStop(); 
     }
     
@@ -154,7 +163,7 @@ public class CarController : MonoBehaviour
             Acceleration();
             Decelration();
             Turn();
-            ArcadeDrift(); // YENİ ARCADE DRİFT SİSTEMİ
+            ArcadeDrift();
             SidewaysDrag();
         }
     }
@@ -163,12 +172,11 @@ public class CarController : MonoBehaviour
     {
         currentSpeed = Mathf.Abs(currentCarLocalVelocity.z) * 3.6f;
         
-        // Hız limitleyici - sadece max speed'e çok yaklaşınca devreye girer
         float speedLimiter = 1f;
-        if (currentSpeed >= maxSpeed * 0.98f) // 0.95'ten 0.98'e çıkarıldı
+        if (currentSpeed >= maxSpeed * 0.98f)
         {
             float overspeedRatio = (currentSpeed - maxSpeed * 0.98f) / (maxSpeed * 0.02f);
-            speedLimiter = Mathf.Pow(1f - Mathf.Clamp01(overspeedRatio), 2f); // 3'ten 2'ye düşürüldü
+            speedLimiter = Mathf.Pow(1f - Mathf.Clamp01(overspeedRatio), 2f);
         }
         
         if (currentSpeed >= maxSpeed)
@@ -182,7 +190,6 @@ public class CarController : MonoBehaviour
             currentAcceleration *= iceAccelerationGrip;
         }
         
-        // Gaz pedalına basılıyorsa ivmelendir
         if (Mathf.Abs(moveInput) > 0.01f)
         {
             float finalAcceleration = currentAcceleration * moveInput * speedLimiter;
@@ -192,42 +199,37 @@ public class CarController : MonoBehaviour
     
     private void Decelration()
     {
-        // Sadece şu durumlarda aktif frenleme yap:
-        // 1. Gaz verilmiyor VE hız çok düşük
-        // 2. Ters yöne gidiliyor
-        
         bool isReversing = Mathf.Abs(moveInput) > 0.1f && Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio);
         bool isLowSpeedNoInput = Mathf.Abs(moveInput) < 0.01f && currentSpeed < lowSpeedThreshold;
         
         if (isReversing)
         {
-            // Ters yöne gidiliyorsa güçlü frenleme
             float decelPower = brakingDeceleration;
-            if (isCarOnIce) decelPower *= 0.2f;
+            if (isCarOnIce) decelPower *= 0.1f;
             
             Vector3 decelerationDirection = -transform.forward * Mathf.Sign(carVelocityRatio);
             carRB.AddForce(decelPower * Mathf.Abs(carVelocityRatio) * decelerationDirection, ForceMode.Acceleration);
         }
-        else if (isLowSpeedNoInput)
+        else if (isLowSpeedNoInput && !isCarOnIce)
         {
-            // Düşük hızda gaz verilmiyorsa hafif frenleme
-            float decelPower = isHandbrakePressed ? brakingDeceleration : deceleration * 0.5f; // Yarıya düşürüldü
-            
+            float decelPower = isHandbrakePressed ? brakingDeceleration : deceleration * 0.5f;
             float lowSpeedBoost = 1f + (1f - currentSpeed / lowSpeedThreshold);
             decelPower *= lowSpeedBoost;
-
-            if (isCarOnIce) decelPower *= 0.2f;
             
             Vector3 decelerationDirection = -transform.forward * Mathf.Sign(carVelocityRatio);
             carRB.AddForce(decelPower * Mathf.Abs(carVelocityRatio) * decelerationDirection, ForceMode.Acceleration);
+        }
+        else if (Mathf.Abs(moveInput) < 0.01f && currentSpeed > minSpeedForCoastingBrake && !isCarOnIce)
+        {
+            float brakePower = coastingBrakeStrength;
+            Vector3 brakeDirection = -transform.forward * Mathf.Sign(carVelocityRatio);
+            carRB.AddForce(brakePower * brakeDirection, ForceMode.Acceleration);
         }
     }
     
     private void Turn()
     {
-        // Sadece drift sırasında hafif direksiyon boost
         float steeringMultiplier = isDrifting ? driftSteerBoost : 1f;
-
         if (isCarOnIce)
         {
             steeringMultiplier *= iceSteeringChaosMultiplier;
@@ -248,7 +250,6 @@ public class CarController : MonoBehaviour
         }
         else if (isDrifting)
         {
-            // Drift sırasında yan tutuş azalır - ama çok hafif
             dragCoefficient = dragCoefficent * 0.7f;
         }
         else if (Mathf.Abs(moveInput) < 0.1f || Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio))
@@ -262,25 +263,18 @@ public class CarController : MonoBehaviour
         
         float dragMagnitude = -currentSidewaySpeed * dragCoefficient;
         Vector3 dragForce = transform.right * dragMagnitude;
-
         carRB.AddForceAtPosition(dragForce, carRB.worldCenterOfMass, ForceMode.Acceleration);
     }
     
     private void ArcadeDrift()
     {
-        // Drift şartı: Space basılı VE yeterli hız VAR
         bool wantsToDrift = isHandbrakePressed && currentSpeed > driftMinSpeed;
-        
-        // Drift faktörünü yumuşak geçişle güncelle
         float targetDrift = wantsToDrift ? 1f : 0f;
         currentDriftFactor = Mathf.Lerp(currentDriftFactor, targetDrift, Time.fixedDeltaTime * driftTransitionSpeed);
-        
         isDrifting = currentDriftFactor > 0.05f;
         
-        // Drift aktifse hafif hız kaybı uygula
         if (isDrifting && Mathf.Abs(moveInput) > 0.1f)
         {
-            // Drift sırasında ileri momentum azalt (hız patlamasını önler)
             Vector3 forwardVelocity = transform.forward * currentCarLocalVelocity.z;
             Vector3 speedReduction = -forwardVelocity * (1f - driftSpeedLoss) * currentDriftFactor;
             carRB.AddForce(speedReduction, ForceMode.Acceleration);
@@ -291,27 +285,31 @@ public class CarController : MonoBehaviour
     {
         if (isGrounded)
         {
-            // Gaz veriliyorsa sürtünmeyi azalt
-            float resistanceFactor = Mathf.Abs(moveInput) > 0.1f ? 0.2f : 1f;
-            
-            // Drift sırasında sürtünmeyi biraz artır (hız patlamasını önlemek için)
-            if (isDrifting)
+            if (isCarOnIce)
             {
-                resistanceFactor += 0.3f * currentDriftFactor;
+                // ❄️ Buzdaysa neredeyse SIFIR sürtünme
+                carRB.AddForce(-carRB.linearVelocity * (airDrag * 0.2f), ForceMode.Acceleration);
             }
-            
-            float currentRollingResistance = isCarOnIce ? rollingResistance * 0.2f : rollingResistance;
-            float baseDrag = currentRollingResistance * resistanceFactor * Mathf.Abs(carVelocityRatio);
-            
-            // Düşük hızda VE gaz verilmiyorsa ek sürtünme
-            if (currentSpeed < lowSpeedThreshold && Mathf.Abs(moveInput) < 0.01f)
+            else
             {
-                float lowSpeedFactor = 1f - (currentSpeed / lowSpeedThreshold);
-                float currentLowSpeedDrag = isCarOnIce ? lowSpeedDragMultiplier * 0.1f : lowSpeedDragMultiplier;
-                baseDrag += currentLowSpeedDrag * lowSpeedFactor;
+                float resistanceFactor = Mathf.Abs(moveInput) > 0.1f ? 0.2f : 1f;
+                if (isDrifting)
+                {
+                    resistanceFactor += 0.3f * currentDriftFactor;
+                }
+                
+                float currentRollingResistance = rollingResistance;
+                float baseDrag = currentRollingResistance * resistanceFactor * Mathf.Abs(carVelocityRatio);
+                
+                if (currentSpeed < lowSpeedThreshold && Mathf.Abs(moveInput) < 0.01f)
+                {
+                    float lowSpeedFactor = 1f - (currentSpeed / lowSpeedThreshold);
+                    float currentLowSpeedDrag = lowSpeedDragMultiplier;
+                    baseDrag += currentLowSpeedDrag * lowSpeedFactor;
+                }
+                
+                carRB.AddForce(-carRB.linearVelocity * baseDrag, ForceMode.Acceleration);
             }
-            
-            carRB.AddForce(-carRB.linearVelocity * baseDrag, ForceMode.Acceleration);
         }
         else
         {
@@ -323,9 +321,13 @@ public class CarController : MonoBehaviour
     {
         if (!isGrounded) return;
 
-        float currentStopThreshold = isCarOnIce ? stopThreshold * 0.2f : stopThreshold;
+        // ❄️ Buzdaysa araba ASLA kendiliğinden durmasın
+        if (isCarOnIce)
+        {
+            return;
+        }
 
-        if (currentSpeed < currentStopThreshold && Mathf.Abs(moveInput) < 0.1f)
+        if (currentSpeed < stopThreshold && Mathf.Abs(moveInput) < 0.1f)
         {
             if (carRB.linearVelocity.magnitude < minSpeedForMovement)
             {
@@ -334,8 +336,7 @@ public class CarController : MonoBehaviour
             }
             else
             {
-                float stopForce = isCarOnIce ? autoStopForce * 0.2f : autoStopForce;
-                carRB.AddForce(-carRB.linearVelocity * stopForce, ForceMode.Acceleration);
+                carRB.AddForce(-carRB.linearVelocity * autoStopForce, ForceMode.Acceleration);
             }
         }
     }
@@ -381,7 +382,7 @@ public class CarController : MonoBehaviour
         float skidThreshold = isCarOnIce ? 2f : minSideSkidVelocity;
         bool shouldShowEffects = isGrounded && 
                                  (Mathf.Abs(currentCarLocalVelocity.x) > skidThreshold || 
-                                 (isDrifting && currentSpeed > 5f) || // Handbrake yerine isDrifting
+                                 (isDrifting && currentSpeed > 5f) || 
                                  (isCarOnIce && Mathf.Abs(steerInput) > 0.5f)) && 
                                  carVelocityRatio > 0;
         
@@ -454,7 +455,6 @@ public class CarController : MonoBehaviour
                 float springVelocity = Vector3.Dot(carRB.GetPointVelocity(rayPoints[i].position), rayPoints[i].up);
                 float dampForce = damperStiffness * springVelocity;
 
-                // Drift sırasında arka tekerleklerin tutuşu azalır
                 float gripReduction = (isDrifting && i >= 2) ? 
                     Mathf.Lerp(1f, driftGripReduction, currentDriftFactor) : 1f;
 

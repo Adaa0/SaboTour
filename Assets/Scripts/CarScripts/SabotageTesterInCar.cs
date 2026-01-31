@@ -6,10 +6,31 @@ public class CheckpointSpawner : MonoBehaviour
     [SerializeField] private GameObject prefabToSpawn;
 
     [Header("Preview")]
-    [SerializeField] private GameObject previewPrefab; // <-- ÜSTÜNDE ÇIKACAK OLAN
+    [SerializeField] private GameObject previewPrefab;
+
+    // ❌ Artık inspector’dan atanmasına gerek yok
+    private ChickenTrapManager chickenTrapManager;
+    private Transform trapPoint;
 
     private Transform currentSpawnPoint;
-    private GameObject currentPreviewInstance; // aktif preview
+    private GameObject currentPreviewInstance;
+
+    void Awake()
+    {
+        // Sahnede TrapManager adında objeyi bul
+        GameObject managerObj = GameObject.Find("TrapManager");
+        if (managerObj != null)
+            chickenTrapManager = managerObj.GetComponent<ChickenTrapManager>();
+        else
+            Debug.LogWarning("TrapManager objesi bulunamadı!");
+
+        // Sahnede ChickenTruck adında objeyi bul
+        GameObject trapObj = GameObject.Find("ChickenTruck");
+        if (trapObj != null)
+            trapPoint = trapObj.transform;
+        else
+            Debug.LogWarning("ChickenTruck objesi bulunamadı!");
+    }
 
     void Update()
     {
@@ -17,9 +38,7 @@ public class CheckpointSpawner : MonoBehaviour
         for (int i = 0; i <= 9; i++)
         {
             if (Input.GetKeyDown(i.ToString()))
-            {
                 SelectCheckpoint(i);
-            }
         }
 
         // F ile spawn + preview sil
@@ -28,6 +47,10 @@ public class CheckpointSpawner : MonoBehaviour
             SpawnPrefab();
             ClearPreview();
         }
+
+        // G ile tavuk skill tetikleme
+        if (Input.GetKeyDown(KeyCode.G))
+            ActivateChickenSkill();
     }
 
     void SelectCheckpoint(int index)
@@ -57,17 +80,13 @@ public class CheckpointSpawner : MonoBehaviour
         if (previewPrefab == null || currentSpawnPoint == null)
             return;
 
-        // Önce eski preview varsa sil
         ClearPreview();
 
         currentPreviewInstance = Instantiate(
             previewPrefab,
-            currentSpawnPoint.position,
+            currentSpawnPoint.position + Vector3.up * 1.5f,
             currentSpawnPoint.rotation
         );
-
-        // Hafif yukarı al (checkpoint'in içine gömülmesin)
-        currentPreviewInstance.transform.position += Vector3.up * 1.5f;
     }
 
     void ClearPreview()
@@ -87,12 +106,19 @@ public class CheckpointSpawner : MonoBehaviour
             return;
         }
 
-        Instantiate(
-            prefabToSpawn,
-            currentSpawnPoint.position,
-            currentSpawnPoint.rotation
-        );
-
+        Instantiate(prefabToSpawn, currentSpawnPoint.position, currentSpawnPoint.rotation);
         Debug.Log("Prefab spawnlandı.");
+    }
+
+    void ActivateChickenSkill()
+    {
+        if (chickenTrapManager == null || trapPoint == null)
+        {
+            Debug.LogWarning("ChickenTrapManager veya trapPoint atanmadı!");
+            return;
+        }
+
+        chickenTrapManager.ActivateChickenTrap(trapPoint);
+        Debug.Log("Tavuk skill aktifleşti!");
     }
 }
