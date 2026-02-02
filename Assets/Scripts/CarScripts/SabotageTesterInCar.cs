@@ -2,14 +2,47 @@ using UnityEngine;
 
 public class CheckpointSpawner : MonoBehaviour
 {
-    [Header("Spawn")]
-    [SerializeField] private GameObject prefabToSpawn;   // Buz bombası prefab
+    [Header("Buz Bombası Spawn")]
+    [SerializeField] private GameObject iceBombPrefab;   // Buz bombası prefab
+    [SerializeField] private GameObject iceBombPreviewPrefab;   // Buz bombası preview
 
-    [Header("Preview")]
-    [SerializeField] private GameObject previewPrefab;   // Buz bombası preview
+    [Header("Tavuk Sürüsü")]
+    [SerializeField] private bool enableChickenFlock = true; // Tavuk sürüsünü aktif et
 
     private Transform currentSpawnPoint;
     private GameObject currentPreviewInstance;
+    private int selectedCheckpointIndex = -1;
+
+    private CheckpointManager checkpointManager;
+    private ChickenFlockManager chickenFlockManager;
+
+    void Start()
+    {
+        checkpointManager = FindAnyObjectByType<CheckpointManager>();
+        
+        if (checkpointManager == null)
+        {
+            Debug.LogError("❌ CheckpointManager bulunamadı!");
+        }
+        else
+        {
+            Debug.Log("✅ CheckpointManager bulundu");
+        }
+        
+        if (enableChickenFlock)
+        {
+            chickenFlockManager = FindAnyObjectByType<ChickenFlockManager>();
+            if (chickenFlockManager == null)
+            {
+                Debug.LogWarning("❌ ChickenFlockManager bulunamadı! Tavuk sürüsü spawn edilemeyecek.");
+                Debug.LogWarning("💡 Sahneye bir GameObject ekleyip ChickenFlockManager script'ini ekleyin!");
+            }
+            else
+            {
+                Debug.Log("✅ ChickenFlockManager bulundu ve hazır!");
+            }
+        }
+    }
 
     void Update()
     {
@@ -20,31 +53,60 @@ public class CheckpointSpawner : MonoBehaviour
                 SelectCheckpoint(i);
         }
 
-        // F ile spawn + preview sil
+        // F ile buz bombası spawn + preview sil
         if (Input.GetKeyDown(KeyCode.F))
         {
-            SpawnPrefab();
+            SpawnIceBomb();
             ClearPreview();
+        }
+
+        // E ile tavuk sürüsü spawn
+        if (Input.GetKeyDown(KeyCode.E))
+        {
+            SpawnChickenFlock();
+        }
+
+        // R ile spawn noktalarını yeniden oluştur (debug için)
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            RegenerateChickenSpawnPoints();
+        }
+    }
+
+    void RegenerateChickenSpawnPoints()
+    {
+        if (chickenFlockManager == null)
+        {
+            chickenFlockManager = FindAnyObjectByType<ChickenFlockManager>();
+        }
+
+        if (chickenFlockManager != null)
+        {
+            Debug.Log("🔄 R tuşuna basıldı - Spawn noktaları yeniden oluşturuluyor...");
+            chickenFlockManager.RegenerateSpawnPoints();
+        }
+        else
+        {
+            Debug.LogWarning("❌ ChickenFlockManager bulunamadı!");
         }
     }
 
     void SelectCheckpoint(int index)
     {
-        CheckpointManager manager = FindAnyObjectByType<CheckpointManager>();
-
-        if (manager == null)
+        if (checkpointManager == null)
         {
             Debug.LogWarning("CheckpointManager yok.");
             return;
         }
 
-        if (index < 0 || index >= manager.checkpoints.Count)
+        if (index < 0 || index >= checkpointManager.checkpoints.Count)
         {
             Debug.LogWarning("Checkpoint " + index + " yok.");
             return;
         }
 
-        currentSpawnPoint = manager.checkpoints[index];
+        currentSpawnPoint = checkpointManager.checkpoints[index];
+        selectedCheckpointIndex = index;
         Debug.Log("Checkpoint seçildi: " + index);
 
         ShowPreview();
@@ -52,13 +114,13 @@ public class CheckpointSpawner : MonoBehaviour
 
     void ShowPreview()
     {
-        if (previewPrefab == null || currentSpawnPoint == null)
+        if (iceBombPreviewPrefab == null || currentSpawnPoint == null)
             return;
 
         ClearPreview();
 
         currentPreviewInstance = Instantiate(
-            previewPrefab,
+            iceBombPreviewPrefab,
             currentSpawnPoint.position + Vector3.up * 1.5f,
             currentSpawnPoint.rotation
         );
@@ -73,20 +135,47 @@ public class CheckpointSpawner : MonoBehaviour
         }
     }
 
-    void SpawnPrefab()
+    void SpawnIceBomb()
     {
-        if (prefabToSpawn == null || currentSpawnPoint == null)
+        if (iceBombPrefab == null || currentSpawnPoint == null)
         {
-            Debug.LogWarning("Prefab veya checkpoint seçilmemiş.");
+            Debug.LogWarning("Buz bombası prefab veya checkpoint seçilmemiş.");
             return;
         }
 
         Instantiate(
-            prefabToSpawn,
+            iceBombPrefab,
             currentSpawnPoint.position,
             currentSpawnPoint.rotation
         );
 
-        Debug.Log("Buz bombası spawnlandı.");
+        Debug.Log("Buz bombası spawnlandı - Checkpoint " + selectedCheckpointIndex);
+    }
+
+    void SpawnChickenFlock()
+    {
+        Debug.Log("🐔 E tuşuna basıldı - Tavuk spawn işlemi başlıyor...");
+
+        if (!enableChickenFlock)
+        {
+            Debug.LogWarning("❌ Tavuk sürüsü aktif değil! CheckpointSpawner'da 'Enable Chicken Flock' seçeneğini aç.");
+            return;
+        }
+
+        if (chickenFlockManager == null)
+        {
+            Debug.LogWarning("❌ ChickenFlockManager bulunamadı! Sahneye ekle.");
+            return;
+        }
+
+        if (selectedCheckpointIndex < 0)
+        {
+            Debug.LogWarning("❌ Önce bir checkpoint seçin! (0-9 tuşları ile)");
+            return;
+        }
+
+        Debug.Log($"✅ Checkpoint {selectedCheckpointIndex} seçili - Tavuk spawn ediliyor...");
+        chickenFlockManager.SpawnChickenFlockAtCheckpoint(selectedCheckpointIndex);
+        Debug.Log($"✅ Tavuk sürüsü spawn komutu gönderildi - Checkpoint {selectedCheckpointIndex}");
     }
 }

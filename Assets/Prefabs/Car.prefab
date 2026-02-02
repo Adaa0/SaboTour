@@ -5411,10 +5411,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 19ceaf24d6f0a974d9c75bc3fe683e3c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CheckpointSpawner
-  prefabToSpawn: {fileID: 8385187716745718710, guid: 81c19dad76950aa48874a566ac2257f2, type: 3}
-  previewPrefab: {fileID: 4456444403391069399, guid: f9964b1ef7bbb5e41860bd9528006246, type: 3}
-  chickenTrapManager: {fileID: 0}
-  trapPoint: {fileID: 0}
+  iceBombPrefab: {fileID: 8385187716745718710, guid: 81c19dad76950aa48874a566ac2257f2, type: 3}
+  iceBombPreviewPrefab: {fileID: 4456444403391069399, guid: f9964b1ef7bbb5e41860bd9528006246, type: 3}
+  enableChickenFlock: 1
 --- !u!1 &4378018966892394989
 GameObject:
   m_ObjectHideFlags: 0
