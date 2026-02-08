@@ -1057,10 +1057,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ChickenFlockManager
   chickenPrefab: {fileID: 551696976088912671, guid: 0e4951456e0d1de48b0a000111fec4dc, type: 3}
-  spawnDistanceBehindCheckpoint: 100
+  spawnDistanceBehindCheckpoint: 500
   minChickensPerFlock: 12
   maxChickensPerFlock: 15
-  flockAreaSize: 8
+  flockAreaSize: 20
   minDistanceBetweenChickens: 1.5
   showDebugGizmos: 1
   createVisualMarkers: 1

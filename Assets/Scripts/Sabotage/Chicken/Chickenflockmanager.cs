@@ -61,8 +61,31 @@ public class ChickenFlockManager : MonoBehaviour
 
     private System.Collections.IEnumerator GenerateAfterDelay()
     {
-        yield return new WaitForSeconds(0.5f);
-        GenerateSpawnPoints();
+        Debug.Log("⏳ CheckpointManager'ın checkpoint'leri yüklemesi bekleniyor...");
+        
+        // 2 saniye bekle
+        yield return new WaitForSeconds(2f);
+        
+        // Checkpoint'leri tekrar kontrol et
+        if (checkpointManager != null && checkpointManager.checkpoints != null && checkpointManager.checkpoints.Count > 0)
+        {
+            Debug.Log($"✅ {checkpointManager.checkpoints.Count} checkpoint hazır - Spawn noktaları oluşturuluyor!");
+            GenerateSpawnPoints();
+        }
+        else
+        {
+            Debug.LogWarning("⚠️ Checkpoint'ler hala yüklenmedi, tekrar deneniyor...");
+            yield return new WaitForSeconds(1f);
+            
+            if (checkpointManager != null && checkpointManager.checkpoints != null && checkpointManager.checkpoints.Count > 0)
+            {
+                GenerateSpawnPoints();
+            }
+            else
+            {
+                Debug.LogError("❌ Checkpoint'ler yüklenemedi! Manuel olarak R tuşuna basın.");
+            }
+        }
     }
 
     private System.Collections.IEnumerator WaitForCheckpointsAndGenerate()
@@ -71,22 +94,39 @@ public class ChickenFlockManager : MonoBehaviour
         
         int attempts = 0;
         // Checkpoint'ler yüklenene kadar bekle
-        while (checkpointManager.checkpoints == null || checkpointManager.checkpoints.Count == 0)
+        while (checkpointManager == null || 
+               checkpointManager.checkpoints == null || 
+               checkpointManager.checkpoints.Count == 0)
         {
             attempts++;
+            
+            if (checkpointManager != null && checkpointManager.checkpoints != null)
+            {
+                Debug.Log($"⏳ Checkpoint sayısı: {checkpointManager.checkpoints.Count} - Bekleniyor...");
+            }
+            
             if (attempts % 10 == 0) // Her 5 saniyede bir log
             {
                 Debug.Log($"⏳ Hala bekleniyor... Deneme: {attempts}");
             }
+            
             yield return new WaitForSeconds(0.5f);
+            
+            // 30 saniyeden fazla bekleme
+            if (attempts > 60)
+            {
+                Debug.LogError("❌ 30 saniye beklendi, checkpoint'ler hala yüklenemedi!");
+                yield break;
+            }
         }
 
         Debug.Log($"✅ Checkpoint'ler bulundu! Sayı: {checkpointManager.checkpoints.Count}");
 
+        // Bir frame daha bekle, emin olmak için
+        yield return null;
+
         // Spawn noktalarını oluştur
         GenerateSpawnPoints();
-        
-        Debug.Log($"✅ Tavuk spawn noktaları oluşturuldu: {spawnPoints.Count} nokta");
     }
 
     /// <summary>
@@ -97,17 +137,35 @@ public class ChickenFlockManager : MonoBehaviour
         spawnPoints.Clear();
         ClearVisualMarkers();
 
-        if (checkpointManager.checkpoints.Count < 2)
+        if (checkpointManager == null)
         {
-            Debug.LogWarning("Yeterli checkpoint yok!");
+            Debug.LogError("❌ CheckpointManager null!");
             return;
         }
+
+        if (checkpointManager.checkpoints == null)
+        {
+            Debug.LogError("❌ checkpoints list null!");
+            return;
+        }
+
+        if (checkpointManager.checkpoints.Count < 2)
+        {
+            Debug.LogWarning($"❌ Yeterli checkpoint yok! Mevcut: {checkpointManager.checkpoints.Count}");
+            return;
+        }
+
+        Debug.Log($"🔄 {checkpointManager.checkpoints.Count} checkpoint için spawn noktası oluşturuluyor...");
 
         for (int i = 0; i < checkpointManager.checkpoints.Count; i++)
         {
             Transform currentCheckpoint = checkpointManager.checkpoints[i];
             
-            if (currentCheckpoint == null) continue;
+            if (currentCheckpoint == null)
+            {
+                Debug.LogWarning($"⚠️ Checkpoint {i} null!");
+                continue;
+            }
 
             // Checkpoint'in konumu
             Vector3 checkpointPos = currentCheckpoint.position;
@@ -122,6 +180,8 @@ public class ChickenFlockManager : MonoBehaviour
             spawnPoint.y = 0.5f;
 
             spawnPoints.Add(spawnPoint);
+
+            Debug.Log($"✅ Spawn noktası {i} oluşturuldu: {spawnPoint}");
 
             // Debug için çizgiyi göster
             Debug.DrawLine(Vector3.zero, checkpointPos, Color.red, 10f);
