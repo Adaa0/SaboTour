@@ -13,6 +13,10 @@ public class ChickenFlockManager : MonoBehaviour
     [SerializeField] private float flockAreaSize = 8f; // Sürünün yayılacağı alan boyutu
     [SerializeField] private float minDistanceBetweenChickens = 1.5f; // Tavuklar arası minimum mesafe
 
+    [Header("Parti Spawn Ayarları")]
+    [SerializeField] private int numberOfWaves = 3; // Kaç parti olacak
+    [SerializeField] private float delayBetweenWaves = 0.5f; // Partiler arası bekleme süresi
+
     [Header("Debug")]
     [SerializeField] private bool showDebugGizmos = true;
     [SerializeField] private bool createVisualMarkers = true; // Sahneye görsel marker koy
@@ -258,12 +262,10 @@ public class ChickenFlockManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Belirtilen checkpoint index'ine tavuk sürüsü spawn et
+    /// Belirtilen checkpoint index'ine tavuk sürüsü spawn et (parti parti)
     /// </summary>
     public void SpawnChickenFlockAtCheckpoint(int checkpointIndex)
     {
-        Debug.Log($"🐔 SpawnChickenFlockAtCheckpoint çağrıldı - Index: {checkpointIndex}");
-
         if (chickenPrefab == null)
         {
             Debug.LogError("❌ Tavuk prefab atanmamış! ChickenFlockManager Inspector'ında 'Chicken Prefab' alanını doldur!");
@@ -282,35 +284,52 @@ public class ChickenFlockManager : MonoBehaviour
             return;
         }
 
+        // Parti parti spawn etmek için coroutine başlat
+        StartCoroutine(SpawnWavesCoroutine(checkpointIndex));
+    }
+
+    /// <summary>
+    /// Tavukları parti parti spawn eden coroutine
+    /// </summary>
+    private System.Collections.IEnumerator SpawnWavesCoroutine(int checkpointIndex)
+    {
         Vector3 centerPoint = spawnPoints[checkpointIndex];
-        int chickenCount = Random.Range(minChickensPerFlock, maxChickensPerFlock + 1);
-
-        Debug.Log($"📍 Spawn pozisyonu: {centerPoint}");
-        Debug.Log($"🐔 Spawn edilecek tavuk sayısı: {chickenCount}");
-
-        // Tavukları spawn et
+        int totalChickens = Random.Range(minChickensPerFlock, maxChickensPerFlock + 1);
+        
+        // Tavukları partilere böl
+        int chickensPerWave = Mathf.CeilToInt((float)totalChickens / numberOfWaves);
+        
         List<Vector3> usedPositions = new List<Vector3>();
+        int spawnedTotal = 0;
 
-        for (int i = 0; i < chickenCount; i++)
+        // Her parti için
+        for (int wave = 0; wave < numberOfWaves; wave++)
         {
-            Vector3 spawnPos = FindValidSpawnPosition(centerPoint, usedPositions);
+            int chickensThisWave = Mathf.Min(chickensPerWave, totalChickens - spawnedTotal);
             
-            if (spawnPos != Vector3.zero)
+            // Bu partideki tavukları spawn et
+            for (int i = 0; i < chickensThisWave; i++)
             {
-                // Tavuğu spawn et
-                GameObject chicken = Instantiate(chickenPrefab, spawnPos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
-                chicken.name = $"Chicken_{checkpointIndex}_{i}";
+                Vector3 spawnPos = FindValidSpawnPosition(centerPoint, usedPositions);
                 
-                usedPositions.Add(spawnPos);
-                Debug.Log($"✅ Tavuk {i} spawn edildi: {spawnPos}");
+                if (spawnPos != Vector3.zero)
+                {
+                    GameObject chicken = Instantiate(chickenPrefab, spawnPos, Quaternion.Euler(0, Random.Range(0f, 360f), 0));
+                    chicken.name = $"Chicken_CP{checkpointIndex}_W{wave}_{i}";
+                    
+                    usedPositions.Add(spawnPos);
+                    spawnedTotal++;
+                }
             }
-            else
+
+            // Son parti değilse bekle
+            if (wave < numberOfWaves - 1)
             {
-                Debug.LogWarning($"⚠️ Tavuk {i} için pozisyon bulunamadı!");
+                yield return new WaitForSeconds(delayBetweenWaves);
             }
         }
 
-        Debug.Log($"✅ Checkpoint {checkpointIndex}'de toplam {usedPositions.Count} tavuk spawn edildi!");
+        Debug.Log($"✅ Checkpoint {checkpointIndex}'de toplam {spawnedTotal} tavuk {numberOfWaves} partide spawn edildi!");
     }
 
     /// <summary>
