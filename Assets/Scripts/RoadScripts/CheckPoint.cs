@@ -12,6 +12,17 @@ public class Checkpoint : MonoBehaviour
         if (root.CompareTag("Player") && root.TryGetComponent(out PlayerRaceController player))
         {
             player.ReachedCheckpoint(checkpointIndex, isFinishLine);
+
+            // DriftTrap sistemini bilgilendir
+            CarController car = root.GetComponent<CarController>();
+            if (car != null)
+            {
+                DriftTrap driftTrap = FindAnyObjectByType<DriftTrap>();
+                if (driftTrap != null)
+                {
+                    driftTrap.OnCarReachedCheckpoint(car, player, checkpointIndex);
+                }
+            }
         }
     }
 
