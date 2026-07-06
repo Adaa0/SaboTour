@@ -2,60 +2,107 @@ using UnityEngine;
 
 public class CarController : MonoBehaviour
 {
-    #region 1. Referanslar (Diğer Nesneler)
+    #region 1. Referanslar
 
     [Header("Referanslar - Oyun nesneleri ve bileşenler")]
     [SerializeField] private Rigidbody carRB;
     [SerializeField] private Transform[] rayPoints;
     [SerializeField] private LayerMask drivable;
     [SerializeField] private Transform accelerationPoint;
-    [SerializeField] private GameObject[] tires = new GameObject[4]; 
-    [SerializeField] private GameObject[] frontTireParents = new GameObject[2]; 
-    [SerializeField] private TrailRenderer[] skidMarks = new TrailRenderer[2]; 
+    [SerializeField] private GameObject[] tires = new GameObject[4];
+    [SerializeField] private GameObject[] frontTireParents = new GameObject[2];
+    [SerializeField] private TrailRenderer[] skidMarks = new TrailRenderer[2];
     [SerializeField] private ParticleSystem[] skidSmokes = new ParticleSystem[2];
 
     #endregion
 
-    #region 2. Süspansiyon Ayarları (Yere Basma)
+    #region 2. Multiplayer — INPUT AYRIMI
+    // ─────────────────────────────────────────────────────────────────────
+    // YAPILAN DEĞİŞİKLİK:
+    //
+    // Eski sistemde her CarController kendi Update()'inde GetAxis() ile
+    // klavyeyi okuyordu. Multiplayer'da bu felaket: 4 araç da aynı
+    // klavyeyi okur, hepsi aynı anda hareket eder.
+    //
+    // Yeni sistem:
+    //   isLocalPlayer = true  → Bu araba BANA ait, klavyeden oku
+    //   isLocalPlayer = false → Bu araba BAŞKASINA ait, klavyeye dokunma
+    //                          Input'u SetNetworkInput() ile dışarıdan al
+    //
+    // Mirror'a geçince:
+    //   isLocalPlayer → NetworkBehaviour.IsOwner ile replace edilecek
+    //   SetNetworkInput() → [ClientRpc] ile server'dan çağrılacak
+    //   Bu bölümün dışındaki HİÇBİR KOD değişmeyecek.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Header("Multiplayer")]
+    [Tooltip("Bu araç local player'a mı ait? " +
+             "True: Klavyeden input okur. " +
+             "False: SetNetworkInput() ile dışarıdan input alır. " +
+             "İLERİDE Mirror'ın IsOwner property'si ile replace edilecek.")]
+    public bool isLocalPlayer = true;
+
+    /// <summary>
+    /// Remote player'ların input'unu dışarıdan set eder.
+    ///
+    /// ŞUAN: LAN testinde host bu metodu manuel çağırabilir
+    ///       ya da (ilerisi için) Input bırak, sadece flag set et.
+    ///
+    /// İLERİDE: Mirror'da [ClientRpc] veya NetworkVariable ile gelecek input
+    ///          bu metoda iletilecek. DriftTrap, IceBomb vs. HİÇBİR ŞEY
+    ///          değişmeyecek — sadece bu metodu çağıran sistem değişecek.
+    /// </summary>
+    public void SetNetworkInput(float move, float steer, bool handbrake)
+    {
+        if (isLocalPlayer) return; // Local player kendi inputunu alıyor, karıştırma
+
+        moveInput = move;
+        steerInput = steer;
+        isHandbrakePressed = handbrake;
+    }
+
+    #endregion
+
+    #region 3. Süspansiyon Ayarları
 
     [Header("Süspansiyon Ayarları")]
     [SerializeField] private float springStiffness = 30000f;
-    [SerializeField] private float damperStiffness = 3000f; 
-    [SerializeField] private float restLength = 0.75f; 
+    [SerializeField] private float damperStiffness = 3000f;
+    [SerializeField] private float restLength = 0.75f;
     [SerializeField] private float springTravel = 0.1f;
-    [SerializeField] private float wheelRadius = 0.6f; 
-    
-    private int[] wheelsIsGrounded = new int[4]; 
+    [SerializeField] private float wheelRadius = 0.6f;
+
+    private int[] wheelsIsGrounded = new int[4];
     private bool isGrounded = false;
 
     #endregion
 
-    #region 3. Girdi Değişkenleri
+    #region 4. Girdi Değişkenleri
 
-    private float moveInput = 0; 
-    private float steerInput = 0; 
-    private bool isHandbrakePressed = false; 
+    private float moveInput = 0;
+    private float steerInput = 0;
+    private bool isHandbrakePressed = false;
 
     #endregion
 
-    #region 4. Araba Ayarları (Hareket Fiziği)
+    #region 5. Araba Ayarları
 
     [Header("Araba Ayarları")]
-    [SerializeField] private float acceleration = 25f; 
-    [SerializeField] private float maxSpeed = 300f; 
-    [SerializeField] private float deceleration = 10f; 
-    [SerializeField] private float steerStrength = 30f; 
-    [SerializeField] private AnimationCurve turningCurve; 
+    [SerializeField] private float acceleration = 25f;
+    [SerializeField] private float maxSpeed = 300f;
+    [SerializeField] private float deceleration = 10f;
+    [SerializeField] private float steerStrength = 30f;
+    [SerializeField] private AnimationCurve turningCurve;
     [SerializeField] private float dragCoefficent = 0.8f;
-    [SerializeField] private float brakingDeceleration = 150f; 
+    [SerializeField] private float brakingDeceleration = 150f;
     [SerializeField] private float brakingDragCoefficent = 1f;
-   
-    private Vector3 currentCarLocalVelocity = Vector3.zero; 
+
+    private Vector3 currentCarLocalVelocity = Vector3.zero;
     private float carVelocityRatio = 0;
     public float currentSpeed = 0f;
 
     [Header("Durma Ayarları")]
-    [SerializeField] private float stopThreshold = 0.5f; 
+    [SerializeField] private float stopThreshold = 0.5f;
     [SerializeField] private float autoStopForce = 5f;
     [SerializeField] private float minSpeedForMovement = 0.1f;
     [SerializeField] private float lowSpeedDragMultiplier = 2f;
@@ -63,16 +110,16 @@ public class CarController : MonoBehaviour
 
     #endregion
 
-    #region 5. Görsel Efekt Ayarları
+    #region 6. Görsel Efekt Ayarları
 
     [Header("Görsel Efektler")]
     [SerializeField] private float tireRotSpeed = 3000f;
-    [SerializeField] private float maxSteeringAngle = 30f; 
+    [SerializeField] private float maxSteeringAngle = 30f;
     [SerializeField] private float minSideSkidVelocity = 8f;
 
     #endregion
 
-    #region 6. Diğer Fizik Ayarları
+    #region 7. Diğer Fizik Ayarları
 
     [Header("Hava Sürtünmesi Ayarları")]
     [SerializeField] private float airDrag = 0.1f;
@@ -80,7 +127,7 @@ public class CarController : MonoBehaviour
 
     #endregion
 
-    #region 7. El Freni Ayarları (Drift) - ARCADE TARZI
+    #region 8. El Freni Ayarları (Drift)
 
     [Header("El Freni Ayarları - Arcade Drift")]
     [SerializeField] private float driftGripReduction = 0.6f;
@@ -88,17 +135,17 @@ public class CarController : MonoBehaviour
     [SerializeField] private float driftMinSpeed = 15f;
     [SerializeField] private float driftTransitionSpeed = 5f;
     [SerializeField] private float driftSpeedLoss = 0.85f;
-    
+
     private float currentDriftFactor = 0f;
     private bool isDrifting = false;
 
     #endregion
 
-    #region 8. Buz Mekaniği
+    #region 9. Buz Mekaniği
 
     [Header("Buz / Kaygan Zemin Ayarları")]
-    [SerializeField] private string iceTag = "Ice"; 
-    [SerializeField] private float iceSidewaysDrag = 0.05f; 
+    [SerializeField] private string iceTag = "Ice";
+    [SerializeField] private float iceSidewaysDrag = 0.05f;
     [SerializeField] private float iceSteeringChaosMultiplier = 1.5f;
     [SerializeField] private float iceAccelerationGrip = 0.3f;
 
@@ -107,7 +154,7 @@ public class CarController : MonoBehaviour
 
     #endregion
 
-    #region 9. Gaz Kesildiğinde Otomatik Yavaşlama
+    #region 10. Gaz Kesildiğinde Otomatik Yavaşlama
 
     [Header("Gaz Kesildiğinde Otomatik Yavaşlama")]
     [SerializeField] private float coastingBrakeStrength = 35f;
@@ -115,14 +162,12 @@ public class CarController : MonoBehaviour
 
     #endregion
 
-    #region Unity'nin Ana Fonksiyonları
+    #region Unity Ana Fonksiyonları
 
     private void Awake()
     {
         if (carRB == null)
-        {
             carRB = GetComponent<Rigidbody>();
-        }
     }
 
     private void FixedUpdate()
@@ -133,25 +178,39 @@ public class CarController : MonoBehaviour
         Suspension();
         Movement();
         ApplyDragAndResistance();
-        CheckAndStop(); 
+        CheckAndStop();
     }
-    
+
     private void Update()
     {
         GetPlayerInput();
     }
-    
+
     #endregion
 
     #region Girdi Alma Fonksiyonu
+    // ─────────────────────────────────────────────────────────────────────
+    // YAPILAN DEĞİŞİKLİK:
+    // İlk satıra "if (!isLocalPlayer) return;" eklendi.
+    //
+    // Bu satır ne yapıyor?
+    //   - isLocalPlayer = false ise (remote player arabası) metod anında çıkıyor.
+    //   - moveInput, steerInput, isHandbrakePressed DEĞİŞMİYOR.
+    //   - Bu değerler SetNetworkInput() üzerinden dışarıdan set edilecek.
+    //   - isLocalPlayer = true ise (benim arabam) eskisi gibi klavyeden okuyor.
+    //
+    // Tek satır ekleme, sıfır yan etki.
+    // ─────────────────────────────────────────────────────────────────────
 
     private void GetPlayerInput()
     {
+        if (!isLocalPlayer) return; // ← EKLENEN SATIR: Remote arabalar klavyeyi okumasın
+
         moveInput = Input.GetAxis("Vertical");
         steerInput = Input.GetAxis("Horizontal");
-        isHandbrakePressed = Input.GetKey(KeyCode.Space); 
+        isHandbrakePressed = Input.GetKey(KeyCode.Space);
     }
-    
+
     #endregion
 
     #region Hareket Fonksiyonları
@@ -167,46 +226,42 @@ public class CarController : MonoBehaviour
             SidewaysDrag();
         }
     }
-    
+
     private void Acceleration()
     {
         currentSpeed = Mathf.Abs(currentCarLocalVelocity.z) * 3.6f;
-        
+
         float speedLimiter = 1f;
         if (currentSpeed >= maxSpeed * 0.98f)
         {
             float overspeedRatio = (currentSpeed - maxSpeed * 0.98f) / (maxSpeed * 0.02f);
             speedLimiter = Mathf.Pow(1f - Mathf.Clamp01(overspeedRatio), 2f);
         }
-        
+
         if (currentSpeed >= maxSpeed)
-        {
             speedLimiter = 0f;
-        }
 
         float currentAcceleration = acceleration;
         if (isCarOnIce)
-        {
             currentAcceleration *= iceAccelerationGrip;
-        }
-        
+
         if (Mathf.Abs(moveInput) > 0.01f)
         {
             float finalAcceleration = currentAcceleration * moveInput * speedLimiter;
             carRB.AddForceAtPosition(finalAcceleration * transform.forward, accelerationPoint.position, ForceMode.Acceleration);
         }
     }
-    
+
     private void Decelration()
     {
         bool isReversing = Mathf.Abs(moveInput) > 0.1f && Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio);
         bool isLowSpeedNoInput = Mathf.Abs(moveInput) < 0.01f && currentSpeed < lowSpeedThreshold;
-        
+
         if (isReversing)
         {
             float decelPower = brakingDeceleration;
             if (isCarOnIce) decelPower *= 0.1f;
-            
+
             Vector3 decelerationDirection = -transform.forward * Mathf.Sign(carVelocityRatio);
             carRB.AddForce(decelPower * Mathf.Abs(carVelocityRatio) * decelerationDirection, ForceMode.Acceleration);
         }
@@ -215,7 +270,7 @@ public class CarController : MonoBehaviour
             float decelPower = isHandbrakePressed ? brakingDeceleration : deceleration * 0.5f;
             float lowSpeedBoost = 1f + (1f - currentSpeed / lowSpeedThreshold);
             decelPower *= lowSpeedBoost;
-            
+
             Vector3 decelerationDirection = -transform.forward * Mathf.Sign(carVelocityRatio);
             carRB.AddForce(decelPower * Mathf.Abs(carVelocityRatio) * decelerationDirection, ForceMode.Acceleration);
         }
@@ -226,53 +281,43 @@ public class CarController : MonoBehaviour
             carRB.AddForce(brakePower * brakeDirection, ForceMode.Acceleration);
         }
     }
-    
+
     private void Turn()
     {
         float steeringMultiplier = isDrifting ? driftSteerBoost : 1f;
         if (isCarOnIce)
-        {
             steeringMultiplier *= iceSteeringChaosMultiplier;
-        }
 
         carRB.AddRelativeTorque(steerStrength * steerInput * turningCurve.Evaluate(Mathf.Abs(carVelocityRatio)) *
-         Mathf.Sign(carVelocityRatio) * steeringMultiplier * carRB.transform.up, ForceMode.Acceleration);
+            Mathf.Sign(carVelocityRatio) * steeringMultiplier * carRB.transform.up, ForceMode.Acceleration);
     }
-    
+
     private void SidewaysDrag()
     {
         float currentSidewaySpeed = currentCarLocalVelocity.x;
         float dragCoefficient;
 
         if (isCarOnIce)
-        {
             dragCoefficient = iceSidewaysDrag;
-        }
         else if (isDrifting)
-        {
             dragCoefficient = dragCoefficent * 0.7f;
-        }
         else if (Mathf.Abs(moveInput) < 0.1f || Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio))
-        {
             dragCoefficient = brakingDragCoefficent;
-        }
         else
-        {
             dragCoefficient = dragCoefficent;
-        }
-        
+
         float dragMagnitude = -currentSidewaySpeed * dragCoefficient;
         Vector3 dragForce = transform.right * dragMagnitude;
         carRB.AddForceAtPosition(dragForce, carRB.worldCenterOfMass, ForceMode.Acceleration);
     }
-    
+
     private void ArcadeDrift()
     {
         bool wantsToDrift = isHandbrakePressed && currentSpeed > driftMinSpeed;
         float targetDrift = wantsToDrift ? 1f : 0f;
         currentDriftFactor = Mathf.Lerp(currentDriftFactor, targetDrift, Time.fixedDeltaTime * driftTransitionSpeed);
         isDrifting = currentDriftFactor > 0.05f;
-        
+
         if (isDrifting && Mathf.Abs(moveInput) > 0.1f)
         {
             Vector3 forwardVelocity = transform.forward * currentCarLocalVelocity.z;
@@ -287,27 +332,24 @@ public class CarController : MonoBehaviour
         {
             if (isCarOnIce)
             {
-                // ❄️ Buzdaysa neredeyse SIFIR sürtünme
                 carRB.AddForce(-carRB.linearVelocity * (airDrag * 0.2f), ForceMode.Acceleration);
             }
             else
             {
                 float resistanceFactor = Mathf.Abs(moveInput) > 0.1f ? 0.2f : 1f;
                 if (isDrifting)
-                {
                     resistanceFactor += 0.3f * currentDriftFactor;
-                }
-                
+
                 float currentRollingResistance = rollingResistance;
                 float baseDrag = currentRollingResistance * resistanceFactor * Mathf.Abs(carVelocityRatio);
-                
+
                 if (currentSpeed < lowSpeedThreshold && Mathf.Abs(moveInput) < 0.01f)
                 {
                     float lowSpeedFactor = 1f - (currentSpeed / lowSpeedThreshold);
                     float currentLowSpeedDrag = lowSpeedDragMultiplier;
                     baseDrag += currentLowSpeedDrag * lowSpeedFactor;
                 }
-                
+
                 carRB.AddForce(-carRB.linearVelocity * baseDrag, ForceMode.Acceleration);
             }
         }
@@ -320,12 +362,7 @@ public class CarController : MonoBehaviour
     private void CheckAndStop()
     {
         if (!isGrounded) return;
-
-        // ❄️ Buzdaysa araba ASLA kendiliğinden durmasın
-        if (isCarOnIce)
-        {
-            return;
-        }
+        if (isCarOnIce) return;
 
         if (currentSpeed < stopThreshold && Mathf.Abs(moveInput) < 0.1f)
         {
@@ -340,7 +377,7 @@ public class CarController : MonoBehaviour
             }
         }
     }
-    
+
     #endregion
 
     #region Görsel Fonksiyonlar
@@ -356,7 +393,7 @@ public class CarController : MonoBehaviour
     private void TireVisuals()
     {
         float effectiveTireRotSpeed = tireRotSpeed;
-        if(isCarOnIce && Mathf.Abs(moveInput) > 0.1f) effectiveTireRotSpeed *= 2f;
+        if (isCarOnIce && Mathf.Abs(moveInput) > 0.1f) effectiveTireRotSpeed *= 2f;
 
         float targetSteerAngle = maxSteeringAngle * steerInput;
 
@@ -380,12 +417,12 @@ public class CarController : MonoBehaviour
     private void Vfx()
     {
         float skidThreshold = isCarOnIce ? 2f : minSideSkidVelocity;
-        bool shouldShowEffects = isGrounded && 
-                                 (Mathf.Abs(currentCarLocalVelocity.x) > skidThreshold || 
-                                 (isDrifting && currentSpeed > 5f) || 
-                                 (isCarOnIce && Mathf.Abs(steerInput) > 0.5f)) && 
+        bool shouldShowEffects = isGrounded &&
+                                 (Mathf.Abs(currentCarLocalVelocity.x) > skidThreshold ||
+                                 (isDrifting && currentSpeed > 5f) ||
+                                 (isCarOnIce && Mathf.Abs(steerInput) > 0.5f)) &&
                                  carVelocityRatio > 0;
-        
+
         ToggleSkidMarks(shouldShowEffects);
         ToggleSkidSmokes(shouldShowEffects);
     }
@@ -414,7 +451,7 @@ public class CarController : MonoBehaviour
     {
         if (tire != null) tire.transform.position = targetPosition;
     }
-    
+
     #endregion
 
     #region Araba Durum Kontrolleri
@@ -434,7 +471,7 @@ public class CarController : MonoBehaviour
 
     #endregion
 
-    #region Süspansiyon Fonksiyonu
+    #region Süspansiyon
 
     private void Suspension()
     {
@@ -455,7 +492,7 @@ public class CarController : MonoBehaviour
                 float springVelocity = Vector3.Dot(carRB.GetPointVelocity(rayPoints[i].position), rayPoints[i].up);
                 float dampForce = damperStiffness * springVelocity;
 
-                float gripReduction = (isDrifting && i >= 2) ? 
+                float gripReduction = (isDrifting && i >= 2) ?
                     Mathf.Lerp(1f, driftGripReduction, currentDriftFactor) : 1f;
 
                 float currentSpringStiffness = springStiffness * gripReduction;
@@ -471,8 +508,27 @@ public class CarController : MonoBehaviour
                 SetTirePosition(tires[i], rayPoints[i].position - rayPoints[i].up * maxLength);
             }
         }
+
         isCarOnIce = (wheelsOnIceCount > 0) || externalIceTrigger;
     }
-    
+
+    #endregion
+
+    #region Public API — DriftTrap ve diğer sistemler için
+
+    /// <summary>
+    /// Aracın şu an drift atıp atmadığını döner.
+    /// DriftTrap bu metodu kullanır (reflection yerine).
+    /// </summary>
+    public bool IsDrifting()
+    {
+        if (skidSmokes == null) return false;
+        foreach (var smoke in skidSmokes)
+        {
+            if (smoke != null && smoke.isPlaying) return true;
+        }
+        return false;
+    }
+
     #endregion
 }

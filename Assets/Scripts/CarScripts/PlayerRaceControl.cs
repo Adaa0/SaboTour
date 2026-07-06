@@ -7,6 +7,7 @@ public class PlayerRaceController : MonoBehaviour
     public int maxLaps = 3;
 
     private int currentCheckpoint = -1;
+    public int CurrentCheckpoint => currentCheckpoint;
     private int currentLap = 0;
     public bool isRacing = true;
 

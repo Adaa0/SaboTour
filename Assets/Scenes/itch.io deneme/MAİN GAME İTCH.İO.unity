@@ -1202,8 +1202,6 @@ MonoBehaviour:
   numberOfWaves: 3
   delayBetweenWaves: 0.5
   showDebugGizmos: 0
-  createVisualMarkers: 0
-  markerColor: {r: 1, g: 0.015686274, b: 0.83331573, a: 1}
 --- !u!1 &1218723680
 GameObject:
   m_ObjectHideFlags: 0
@@ -1583,7 +1581,7 @@ Transform:
   m_GameObject: {fileID: 1256942404}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 5, z: -16}
+  m_LocalPosition: {x: -844.3429, y: 5.3, z: 677.4063}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

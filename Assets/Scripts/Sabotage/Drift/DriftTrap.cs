@@ -1,14 +1,19 @@
 using UnityEngine;
 using System.Collections.Generic;
-using System.Reflection;
 
 /// <summary>
-/// DRIFT TRAP SKİLL
-/// 0-9 ile checkpoint seç, C ile tuzak kur.
-/// O checkpoint'i geçen (veya 10s içinde geçecek olan) araçlar
-/// bir sonraki checkpoint'e kadar drift sürelerinin 2 katı ceza alır.
-/// Drift tespiti: skidSmokes particle sistemi çalışıyorsa drift sayılır.
-/// Drift atıldıkça anlık "Drift Cezası: +X.Xs" LastLapText'te gösterilir.
+/// DRIFT TRAP SKİLL - LAN/Network Hazırlık Versiyonu
+///
+/// MİMARİ NOT (Mirror'a geçiş için):
+/// - Bu script HOST/SERVER üzerinde çalışacak şekilde tasarlandı (host-authoritative).
+/// - "INPUT" bölümündeki metodlar (SelectCheckpoint, ActivateTrap) ileride
+///   [Command] olacak: Sabotajcı client'tan -> Server'a çağrılacak.
+/// - "SERVER LOGIC" bölümü zaten server-only mantıkla çalışıyor, büyük
+///   değişiklik gerekmez.
+/// - "CLIENT FEEDBACK" bölümündeki PlayerRaceController çağrıları ileride
+///   [TargetRpc] olacak (Server -> sadece ilgili client).
+/// - Reflection tamamen kaldırıldı: CarController.IsDrifting() ve
+///   PlayerRaceController.CurrentCheckpoint public erişim sağlıyor.
 /// </summary>
 public class DriftTrap : MonoBehaviour
 {
@@ -30,10 +35,6 @@ public class DriftTrap : MonoBehaviour
 
     private CheckpointManager checkpointManager;
 
-    // Reflection cache
-    private static FieldInfo skidSmokesField;
-    private static FieldInfo currentCheckpointField;
-
     // ─── İç Sınıf ────────────────────────────────────────────────
     private class TrackedCar
     {
@@ -45,34 +46,22 @@ public class DriftTrap : MonoBehaviour
     }
 
     // ─── Unity ───────────────────────────────────────────────────
-    void Awake()
-    {
-        // Reflection field'larını bir kere cache'le
-        skidSmokesField = typeof(CarController).GetField("skidSmokes",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-
-        currentCheckpointField = typeof(PlayerRaceController).GetField("currentCheckpoint",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-
-        if (skidSmokesField == null)
-            Debug.LogError("[DriftTrap] CarController'da 'skidSmokes' field'ı bulunamadı! İsim değişmiş olabilir.");
-
-        if (currentCheckpointField == null)
-            Debug.LogError("[DriftTrap] PlayerRaceController'da 'currentCheckpoint' field'ı bulunamadı!");
-    }
-
     void Start()
     {
         checkpointManager = FindAnyObjectByType<CheckpointManager>();
         if (checkpointManager == null)
             Debug.LogWarning("[DriftTrap] CheckpointManager bulunamadı!");
         else if (showDebugLogs)
-            Debug.Log("[DriftTrap] Hazır. 0-9 ile checkpoint seç, C ile tuzak kur.");
+            Debug.Log("[DriftTrap] Hazır. 0-9 ile checkpoint seç, C ile tuzak kur. (TEST INPUT)");
     }
 
     void Update()
     {
-        HandleInput();
+        // ŞİMDİLİK: Tek oyunculu test girişi (klavye).
+        // İLERİDE: Bu blok kaldırılacak. Sabotajcı UI'ından gelen tıklamalar
+        // doğrudan SelectCheckpoint() ve ActivateTrap() metodlarını
+        // bir [Command] üzerinden server'da çağıracak.
+        HandleLocalTestInput();
 
         if (trapActive)
         {
@@ -88,8 +77,13 @@ public class DriftTrap : MonoBehaviour
         }
     }
 
-    // ─── Girdi ───────────────────────────────────────────────────
-    void HandleInput()
+    #region INPUT — İleride [Command] olacak kısım
+
+    /// <summary>
+    /// Geçici test girişi. Mirror'a geçince bu metod tamamen silinecek,
+    /// yerine sabotajcı UI'ı SelectCheckpoint/ActivateTrap'i Command ile çağıracak.
+    /// </summary>
+    private void HandleLocalTestInput()
     {
         for (int i = 0; i <= 9; i++)
         {
@@ -101,9 +95,15 @@ public class DriftTrap : MonoBehaviour
             ActivateTrap();
     }
 
-    void SelectCheckpoint(int index)
+    /// <summary>
+    /// Sabotajcı bir checkpoint seçer.
+    /// İLERİDE: [Command] CmdSelectCheckpoint(int index) → server tarafında
+    /// selectedCheckpointIndex'i set eder. Yetki kontrolü (sadece sabotajcı
+    /// çağırabilsin) burada eklenecek.
+    /// </summary>
+    public void SelectCheckpoint(int index)
     {
-        if (checkpointManager == null || index >= checkpointManager.checkpoints.Count)
+        if (checkpointManager == null || index < 0 || index >= checkpointManager.checkpoints.Count)
         {
             if (showDebugLogs) Debug.LogWarning($"[DriftTrap] Checkpoint {index} mevcut değil.");
             return;
@@ -112,8 +112,12 @@ public class DriftTrap : MonoBehaviour
         if (showDebugLogs) Debug.Log($"[DriftTrap] Checkpoint {index} seçildi. C → tuzak kur.");
     }
 
-    // ─── Tuzak Aktivasyonu ────────────────────────────────────────
-    void ActivateTrap()
+    /// <summary>
+    /// Sabotajcı tuzağı aktive eder.
+    /// İLERİDE: [Command] CmdActivateTrap() olacak. Cooldown kontrolü
+    /// (sabotajcının skill cooldown'u bitti mi) burada eklenecek.
+    /// </summary>
+    public void ActivateTrap()
     {
         if (selectedCheckpointIndex < 0)
         {
@@ -141,22 +145,27 @@ public class DriftTrap : MonoBehaviour
         CheckCarsCurrentlyBetweenCheckpoints(nextIndex);
     }
 
-    // ─── Şu An Checkpointler Arasında Olan Araçları Yakala ───────
+    #endregion
+
+    #region SERVER LOGIC — Host-authoritative, mantık değişmeyecek
+
+    /// <summary>
+    /// Tuzak aktive edildiğinde zaten trapCheckpoint ile nextCheckpoint
+    /// arasında olan araçları anında takibe alır.
+    /// İLERİDE: Zaten server'da çalışacak, değişiklik gerekmez.
+    /// </summary>
     void CheckCarsCurrentlyBetweenCheckpoints(int nextIndex)
     {
-        if (currentCheckpointField == null) return;
-
         PlayerRaceController[] allPlayers = FindObjectsByType<PlayerRaceController>(FindObjectsSortMode.None);
 
         foreach (var player in allPlayers)
         {
             if (!player.isRacing) continue;
 
-            // currentCheckpoint: oyuncunun en son geçtiği checkpoint index'i
-            int lastCP = (int)currentCheckpointField.GetValue(player);
+            // Reflection yerine public property
+            int lastCP = player.CurrentCheckpoint;
 
-            // Oyuncu tam olarak trapCheckpoint'i son geçtiği checkpoint olarak tutuyorsa
-            // yani trapCP'yi geçmiş ama nextCP'yi henüz geçmemiş → arasında
+            // Oyuncu trapCP'yi geçmiş ama nextCP'yi henüz geçmemiş → arasında
             if (lastCP == trapCheckpointIndex)
             {
                 CarController car = player.GetComponentInParent<CarController>();
@@ -181,7 +190,11 @@ public class DriftTrap : MonoBehaviour
         }
     }
 
-    // ─── Drift Takibi (her frame) ─────────────────────────────────
+    /// <summary>
+    /// Her frame takip edilen araçların drift durumunu kontrol eder.
+    /// İLERİDE: Server'da çalışır. driftTime SyncVar olabilir ama şart değil,
+    /// sadece final ceza an itibariyle client'a gönderilir.
+    /// </summary>
     void TrackDrifts()
     {
         List<CarController> toRemove = new List<CarController>();
@@ -196,14 +209,14 @@ public class DriftTrap : MonoBehaviour
                 continue;
             }
 
-            bool drifting = IsCarDrifting(tc.car);
-
-            if (drifting)
+            // Reflection yerine public metod
+            if (tc.car.IsDrifting())
             {
                 tc.driftTime += Time.deltaTime;
 
-                // Anlık ceza miktarını UI'da göster (her frame güncelle)
                 float currentPenalty = tc.driftTime * penaltyMultiplier;
+
+                // CLIENT FEEDBACK — bkz. dosya sonundaki not
                 tc.raceController.ShowLiveDriftPenalty(currentPenalty);
             }
         }
@@ -212,23 +225,11 @@ public class DriftTrap : MonoBehaviour
             trackedCars.Remove(car);
     }
 
-    // ─── Drift Tespiti ────────────────────────────────────────────
-    bool IsCarDrifting(CarController car)
-    {
-        if (car == null || skidSmokesField == null) return false;
-
-        ParticleSystem[] smokes = (ParticleSystem[])skidSmokesField.GetValue(car);
-        if (smokes == null) return false;
-
-        foreach (var smoke in smokes)
-        {
-            if (smoke != null && smoke.isPlaying)
-                return true;
-        }
-        return false;
-    }
-
-    // ─── Checkpoint'e Ulaşma (Checkpoint.cs'den çağrılır) ─────────
+    /// <summary>
+    /// Checkpoint.cs tarafından çağrılır (araç checkpoint'e ulaştığında).
+    /// İLERİDE: Checkpoint trigger'ları server-authoritative olacağı için
+    /// bu metod zaten sadece server'da tetiklenecek. Değişiklik gerekmez.
+    /// </summary>
     public void OnCarReachedCheckpoint(CarController car, PlayerRaceController raceController, int checkpointIndex)
     {
         if (!trapActive || checkpointManager == null) return;
@@ -277,12 +278,15 @@ public class DriftTrap : MonoBehaviour
         }
     }
 
-    // ─── Ceza Uygula ─────────────────────────────────────────────
+    /// <summary>
+    /// İLERİDE: Server'da çalışır. AddTimePenalty çağrısı [TargetRpc]
+    /// üzerinden ilgili client'a gönderilecek (bkz. dosya sonu notu).
+    /// </summary>
     void ApplyPenalty(TrackedCar tc)
     {
         tc.penaltyApplied = true;
 
-        // Canlı gösteriyi temizle
+        // CLIENT FEEDBACK
         tc.raceController.ClearLiveDriftPenalty();
 
         if (tc.driftTime <= 0.05f)
@@ -293,15 +297,35 @@ public class DriftTrap : MonoBehaviour
         }
 
         float penalty = tc.driftTime * penaltyMultiplier;
+
+        // CLIENT FEEDBACK
         tc.raceController.AddTimePenalty(penalty, tc.driftTime);
 
         if (showDebugLogs)
-            Debug.Log($"[DriftTrap]  CEZA! Drift: {tc.driftTime:F2}s × {penaltyMultiplier} = +{penalty:F2}s");
+            Debug.Log($"[DriftTrap] CEZA! Drift: {tc.driftTime:F2}s × {penaltyMultiplier} = +{penalty:F2}s");
 
         trapActive = false;
     }
 
-    // ─── Gizmos ───────────────────────────────────────────────────
+    #endregion
+
+    #region CLIENT FEEDBACK — Mirror notu
+    //
+    // ShowLiveDriftPenalty(), ClearLiveDriftPenalty() ve AddTimePenalty()
+    // şu an PlayerRaceController üzerinde doğrudan çağrılıyor (local).
+    //
+    // Mirror'a geçince:
+    // - PlayerRaceController bir NetworkBehaviour olacak.
+    // - Bu üç metod [TargetRpc] attribute'u alacak, böylece sadece o aracın
+    //   sahibi olan client'ın ekranında görünecek (diğer oyuncular görmemeli).
+    // - DriftTrap (server'da) bu metodları çağırmaya devam edecek, sadece
+    //   PlayerRaceController içindeki implementasyon RPC'ye dönüşecek.
+    //
+    // Yani DriftTrap.cs'de BAŞKA bir değişiklik gerekmeyecek — sadece
+    // PlayerRaceController.cs'deki üç metodun başına [TargetRpc] eklenecek.
+    #endregion
+
+    #region Gizmos
     void OnDrawGizmos()
     {
         if (!trapActive || checkpointManager == null) return;
@@ -319,4 +343,5 @@ public class DriftTrap : MonoBehaviour
             Gizmos.DrawWireSphere(checkpointManager.checkpoints[nextIdx].position, 5f);
         }
     }
+    #endregion
 }
