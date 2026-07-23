@@ -5315,6 +5315,7 @@ MonoBehaviour:
   skidSmokes:
   - {fileID: 6055725231162475405}
   - {fileID: 7299875650287950980}
+  isLocalPlayer: 1
   springStiffness: 30000
   damperStiffness: 3000
   restLength: 0.75
@@ -5399,6 +5400,8 @@ MonoBehaviour:
   isRacing: 1
   LapCount: {fileID: 0}
   CheckpointInfo: {fileID: 0}
+  TotalTimeText: {fileID: 0}
+  LastLapTimeText: {fileID: 0}
 --- !u!114 &2466745690000224606
 MonoBehaviour:
   m_ObjectHideFlags: 0

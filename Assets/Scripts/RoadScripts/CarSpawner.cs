@@ -41,31 +41,28 @@ public class CarSpawner : MonoBehaviour
             return;
         }
 
-        // Son checkpoint = finish line
-        GameObject finishLine = checkpoints[checkpoints.Count - 1];
-        if (finishLine == null)
+        GameObject startLine = checkpoints[0];
+        if (startLine == null)
         {
-            Debug.LogError("Finish line checkpoint is missing!");
+            Debug.LogError("Start checkpoint is missing!");
             return;
         }
 
-        // Aracı finish line üzerinde spawn et
-        Vector3 spawnPosition = finishLine.transform.position - Vector3.up * 3f; // Yol seviyesine indir
-        Quaternion spawnRotation = finishLine.transform.rotation;
+        
+        Vector3 spawnPosition = startLine.transform.position - Vector3.up * 3f; 
+        Quaternion spawnRotation = startLine.transform.rotation;
         
         GameObject car = Instantiate(carPrefab, spawnPosition, spawnRotation);
         car.name = "PlayerCar";
 
-        // Player tag'ini ata
+       
         car.tag = "Player";
 
-        // Rigidbody kontrolü
         if (!car.GetComponent<Rigidbody>())
         {
             car.AddComponent<Rigidbody>();
         }
 
-        // PlayerRaceController'ı başlat
         if (autoInitializePlayer)
         {
             var playerController = car.GetComponent<PlayerRaceController>();
@@ -79,7 +76,7 @@ public class CarSpawner : MonoBehaviour
             }
         }
         
-        Debug.Log($"Car spawned at finish line: {spawnPosition}");
+        Debug.Log($"Car spawned at start line (checkpoint 0): {spawnPosition}");
     }
 
     private void OnDestroy()
