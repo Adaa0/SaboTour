@@ -1,6 +1,39 @@
 using UnityEngine;
+using Mirror;
 
-public class CarController : MonoBehaviour
+/// <summary>
+/// MİMARİ NOT (Mirror Entegrasyonu):
+///
+/// Önceki tasarımda "SetNetworkInput" ile input relay planlanmıştı (server
+/// tüm client'ların inputunu toplayıp herkese dağıtır, herkes aynı fiziği
+/// hesaplar). Videodaki yaklaşımı öğrendikten sonra DAHA BASİT bir yola
+/// geçiyoruz:
+///
+///   - Sadece OWNER (arabanın sahibi olan client) fiziği hesaplıyor.
+///   - NetworkTransform component'i (Unity Inspector'da eklenecek) pozisyon/
+///     rotasyonu otomatik olarak diğer client'lara yayıyor.
+///   - Drift/grounded/hız gibi GÖRSEL state'ler (skid smoke, tekerlek dönüşü
+///     gibi efektler için) SyncVar ile senkronize ediliyor, böylece remote
+///     arabalar da doğru görsel efektleri gösteriyor.
+///
+/// Bu yaklaşım Rigidbody tabanlı arcade fizik için yaygın ve basit bir
+/// çözüm. Rekabetçi/hile-korumalı bir oyun olsaydı server-authoritative
+/// fizik tercih edilirdi, ama SaboTour bir party oyunu, bu basitlik yeterli.
+///
+/// UNITY INSPECTOR'DA YAPMAN GEREKENLER (kod değil, ayar):
+/// 1. Araba prefabına "Network Identity" component'i ekle.
+/// 2. Araba prefabına "Network Transform (Reliable)" ya da tercihen
+///    "Network Transform Unreliable" ekle (video da bunu öneriyor —
+///    hareket gibi sürekli değişen veri için Unreliable daha az gecikme
+///    yaratıyor).
+///    - Position ve Rotation senkronizasyonunu aç.
+///    - "Sync Direction" alanını "Client To Server" yap (owner'ın fiziği
+///      yetkili olsun diye).
+/// 3. CarController component'inin kendisinde de (NetworkBehaviour olduğu
+///    için) Inspector'da "Sync Direction: Client To Server" görünecek,
+///    aynı şekilde ayarla — SyncVar'ları owner'ın yazabilmesi için gerekli.
+/// </summary>
+public class CarController : NetworkBehaviour
 {
     #region 1. Referanslar
 
@@ -16,49 +49,86 @@ public class CarController : MonoBehaviour
 
     #endregion
 
-    #region 2. Multiplayer — INPUT AYRIMI
+    #region 2. Multiplayer — Senkronize Görsel State
     // ─────────────────────────────────────────────────────────────────────
-    // YAPILAN DEĞİŞİKLİK:
-    //
-    // Eski sistemde her CarController kendi Update()'inde GetAxis() ile
-    // klavyeyi okuyordu. Multiplayer'da bu felaket: 4 araç da aynı
-    // klavyeyi okur, hepsi aynı anda hareket eder.
-    //
-    // Yeni sistem:
-    //   isLocalPlayer = true  → Bu araba BANA ait, klavyeden oku
-    //   isLocalPlayer = false → Bu araba BAŞKASINA ait, klavyeye dokunma
-    //                          Input'u SetNetworkInput() ile dışarıdan al
-    //
-    // Mirror'a geçince:
-    //   isLocalPlayer → NetworkBehaviour.IsOwner ile replace edilecek
-    //   SetNetworkInput() → [ClientRpc] ile server'dan çağrılacak
-    //   Bu bölümün dışındaki HİÇBİR KOD değişmeyecek.
+    // Bu değerler sadece OWNER tarafından her FixedUpdate'te güncelleniyor,
+    // Mirror bunları otomatik olarak diğer client'lara (ve server'a) yayıyor.
+    // Hook metodları, remote client'larda bu değerler değiştiğinde ilgili
+    // private field'ı güncelliyor — böylece Visuals()/Vfx() gibi metodlar
+    // owner'da da remote'da da AYNI KODLA çalışıyor, özel durum yazmaya
+    // gerek kalmıyor.
     // ─────────────────────────────────────────────────────────────────────
 
-    [Header("Multiplayer")]
-    [Tooltip("Bu araç local player'a mı ait? " +
-             "True: Klavyeden input okur. " +
-             "False: SetNetworkInput() ile dışarıdan input alır. " +
-             "İLERİDE Mirror'ın IsOwner property'si ile replace edilecek.")]
-    public bool isLocalPlayer = true;
+    [SyncVar(hook = nameof(OnDriftingChanged))]
+    private bool netIsDrifting;
 
-    /// <summary>
-    /// Remote player'ların input'unu dışarıdan set eder.
-    ///
-    /// ŞUAN: LAN testinde host bu metodu manuel çağırabilir
-    ///       ya da (ilerisi için) Input bırak, sadece flag set et.
-    ///
-    /// İLERİDE: Mirror'da [ClientRpc] veya NetworkVariable ile gelecek input
-    ///          bu metoda iletilecek. DriftTrap, IceBomb vs. HİÇBİR ŞEY
-    ///          değişmeyecek — sadece bu metodu çağıran sistem değişecek.
-    /// </summary>
-    public void SetNetworkInput(float move, float steer, bool handbrake)
+    [SyncVar(hook = nameof(OnGroundedChanged))]
+    private bool netIsGrounded;
+
+    [SyncVar(hook = nameof(OnVelocityRatioChanged))]
+    private float netVelocityRatio;
+
+    private void OnDriftingChanged(bool oldValue, bool newValue)
     {
-        if (isLocalPlayer) return; // Local player kendi inputunu alıyor, karıştırma
+        if (!isOwned) isDrifting = newValue;
+    }
 
-        moveInput = move;
-        steerInput = steer;
-        isHandbrakePressed = handbrake;
+    private void OnGroundedChanged(bool oldValue, bool newValue)
+    {
+        if (!isOwned) isGrounded = newValue;
+    }
+
+    private void OnVelocityRatioChanged(float oldValue, float newValue)
+    {
+        if (!isOwned) carVelocityRatio = newValue;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // TEKERLEK POZİSYONU SENKRONİZASYONU
+    //
+    // Suspension() sadece owner'da çalıştığı için tekerlekler remote'da
+    // hiç raycast ile zemine oturtulmuyor, prefab'ın başlangıç konumunda
+    // ("batık") kalıyor. Çözüm: owner'ın hesapladığı 4 tekerlek pozisyonunu
+    // (LOCAL, yani araba gövdesine göre offset) senkronize ediyoruz.
+    //
+    // ÖNEMLİ VARSAYIM: tires[] objelerinin, araba gövdesinin (bu script'in
+    // bağlı olduğu obje) CHILD'ı (alt objesi) olması gerekiyor. Eğer
+    // değillerse localPosition anlamsız olur, world position senkronize
+    // etmek gerekirdi (daha pahalı).
+    // ─────────────────────────────────────────────────────────────────────
+
+    [SyncVar(hook = nameof(OnTire0PosChanged))] private Vector3 netTire0LocalPos;
+    [SyncVar(hook = nameof(OnTire1PosChanged))] private Vector3 netTire1LocalPos;
+    [SyncVar(hook = nameof(OnTire2PosChanged))] private Vector3 netTire2LocalPos;
+    [SyncVar(hook = nameof(OnTire3PosChanged))] private Vector3 netTire3LocalPos;
+
+    private void OnTire0PosChanged(Vector3 oldValue, Vector3 newValue) => ApplyRemoteTirePosition(0, newValue);
+    private void OnTire1PosChanged(Vector3 oldValue, Vector3 newValue) => ApplyRemoteTirePosition(1, newValue);
+    private void OnTire2PosChanged(Vector3 oldValue, Vector3 newValue) => ApplyRemoteTirePosition(2, newValue);
+    private void OnTire3PosChanged(Vector3 oldValue, Vector3 newValue) => ApplyRemoteTirePosition(3, newValue);
+
+    private void ApplyRemoteTirePosition(int index, Vector3 localPos)
+    {
+        if (isOwned) return; // owner zaten kendi hesapladığı pozisyonu kullanıyor
+        if (tires[index] != null)
+            tires[index].transform.localPosition = localPos;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DİREKSİYON GÖRSELİ SENKRONİZASYONU
+    //
+    // steerInput sadece owner'ın GetPlayerInput()'unda dolduruluyor. Bu
+    // senkronize edilmezse, remote arabaların ön tekerlekleri asla dönmüş
+    // görünmez (araba viraja girse bile tekerlek düz duruyormuş gibi
+    // görünür) — küçük ama fark edilir bir görsel kusur.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [SyncVar(hook = nameof(OnSteerInputChanged))]
+    private float netSteerInput;
+
+    private void OnSteerInputChanged(float oldValue, float newValue)
+    {
+        if (!isOwned) steerInput = newValue;
     }
 
     #endregion
@@ -170,42 +240,97 @@ public class CarController : MonoBehaviour
             carRB = GetComponent<Rigidbody>();
     }
 
+    /// <summary>
+    /// Mirror callback — obje HERHANGİ bir client'ta spawn olduğunda çağrılır
+    /// (hem owner'da hem remote'da).
+    ///
+    /// NEDEN GEREKLİ: Remote arabalarda Suspension()/Movement() çalışmıyor
+    /// (isOwned kontrolü yüzünden), ama Rigidbody hâlâ aktif olduğu için
+    /// Unity'nin fizik motoru yerçekimini uygulamaya devam ediyor — hiçbir
+    /// kuvvet buna karşı koymadığından araba yavaşça yere batıyor.
+    ///
+    /// NOT: isKinematic = true DENENMİŞTİ ama bu arabayı "duvar" gibi
+    /// yapıyor — kinematic objeler collision'dan etkilenmiyor, sadece
+    /// karşı tarafı itiyor, kendisi hiç tepki vermiyor. Bunun yerine
+    /// SADECE yerçekimini kapatıyoruz: araba hâlâ normal dinamik bir
+    /// Rigidbody (çarpışmalarda gerçekçi tepki veriyor, itilebiliyor)
+    /// ama üzerine yerçekimi etki etmediği için batmıyor. NetworkTransform
+    /// zaten periyodik olarak doğru pozisyonu yeniden yazdığı için, itilen
+    /// araba kısa sürede owner'ın gerçek konumuna kendini toparlıyor —
+    /// arcade oyun için hoş bir "esneme" hissi, duvar hissi değil.
+    /// </summary>
+    public override void OnStartClient()
+    {
+        base.OnStartClient();
+
+        if (carRB != null)
+            carRB.useGravity = false;
+    }
+
+    /// <summary>
+    /// Mirror callback — SADECE bu arabanın sahibi olan client'ta çağrılır.
+    /// Burada gerçek yerçekimini geri açıyoruz, çünkü owner'ın süspansiyon
+    /// sistemi (Suspension()) yerçekimine karşı kuvvet uygulayarak dengeyi
+    /// sağlıyor — bu etkileşim sadece owner'da gerçekleşmeli.
+    /// </summary>
+    public override void OnStartAuthority()
+    {
+        base.OnStartAuthority();
+
+        if (carRB != null)
+            carRB.useGravity = true;
+    }
+
     private void FixedUpdate()
     {
+        // ─────────────────────────────────────────────────────────────
+        // SADECE OWNER FİZİĞİ HESAPLIYOR. Remote arabalar için pozisyon
+        // zaten NetworkTransform tarafından otomatik güncelleniyor,
+        // burada tekrar fizik hesaplamaya gerek yok (hatta hesaplarsak
+        // NetworkTransform'un yazdığı pozisyonla çakışıp titremeye
+        // sebep olur).
+        // ─────────────────────────────────────────────────────────────
+        if (!isOwned) return;
+
         GroundCheck();
         CalculateCarVelocity();
-        Visuals();
         Suspension();
         Movement();
         ApplyDragAndResistance();
         CheckAndStop();
+
+        // Tekerlek pozisyonlarını ve direksiyon inputunu remote client'lara
+        // yaymak için senkronize et.
+        if (tires[0] != null) netTire0LocalPos = tires[0].transform.localPosition;
+        if (tires[1] != null) netTire1LocalPos = tires[1].transform.localPosition;
+        if (tires[2] != null) netTire2LocalPos = tires[2].transform.localPosition;
+        if (tires[3] != null) netTire3LocalPos = tires[3].transform.localPosition;
+        netSteerInput = steerInput;
+
+        // Görsel state'i diğer client'lara yaymak için senkronize et.
+        // (Sync Direction: Client To Server ayarlandığı için owner
+        // bunları doğrudan yazabiliyor.)
+        netIsDrifting = isDrifting;
+        netIsGrounded = isGrounded;
+        netVelocityRatio = carVelocityRatio;
     }
 
     private void Update()
     {
-        GetPlayerInput();
+        if (isOwned)
+            GetPlayerInput();
+
+        // Visuals HERKESTE çalışıyor — owner'da taze hesaplanan, remote'da
+        // SyncVar hook'larından gelen değerlerle aynı kod çalışıyor.
+        Visuals();
     }
 
     #endregion
 
     #region Girdi Alma Fonksiyonu
-    // ─────────────────────────────────────────────────────────────────────
-    // YAPILAN DEĞİŞİKLİK:
-    // İlk satıra "if (!isLocalPlayer) return;" eklendi.
-    //
-    // Bu satır ne yapıyor?
-    //   - isLocalPlayer = false ise (remote player arabası) metod anında çıkıyor.
-    //   - moveInput, steerInput, isHandbrakePressed DEĞİŞMİYOR.
-    //   - Bu değerler SetNetworkInput() üzerinden dışarıdan set edilecek.
-    //   - isLocalPlayer = true ise (benim arabam) eskisi gibi klavyeden okuyor.
-    //
-    // Tek satır ekleme, sıfır yan etki.
-    // ─────────────────────────────────────────────────────────────────────
 
     private void GetPlayerInput()
     {
-        if (!isLocalPlayer) return; // ← EKLENEN SATIR: Remote arabalar klavyeyi okumasın
-
         moveInput = Input.GetAxis("Vertical");
         steerInput = Input.GetAxis("Horizontal");
         isHandbrakePressed = Input.GetKey(KeyCode.Space);
@@ -517,17 +642,14 @@ public class CarController : MonoBehaviour
     #region Public API — DriftTrap ve diğer sistemler için
 
     /// <summary>
-    /// Aracın şu an drift atıp atmadığını döner.
-    /// DriftTrap bu metodu kullanır (reflection yerine).
+    /// Aracın şu an drift atıp atmadığını döner. Owner'da doğrudan taze
+    /// değer, remote'da SyncVar hook'undan gelen senkronize değer —
+    /// DriftTrap.cs (server'da çalışıyor) bunu güvenle her iki durumda da
+    /// kullanabilir.
     /// </summary>
     public bool IsDrifting()
     {
-        if (skidSmokes == null) return false;
-        foreach (var smoke in skidSmokes)
-        {
-            if (smoke != null && smoke.isPlaying) return true;
-        }
-        return false;
+        return isDrifting;
     }
 
     #endregion

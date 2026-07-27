@@ -18,7 +18,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1926872301813916433
 Transform:
   m_ObjectHideFlags: 0
@@ -5225,6 +5225,9 @@ GameObject:
   - component: {fileID: 1824948303629796492}
   - component: {fileID: 118247748795154916}
   - component: {fileID: 2466745690000224606}
+  - component: {fileID: 4490114615830032202}
+  - component: {fileID: 6313625600349125531}
+  - component: {fileID: 6020618234517215157}
   m_Layer: 0
   m_Name: Car
   m_TagString: Player
@@ -5291,6 +5294,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cca1d82a63128bb48b3d5755442ba961, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  syncDirection: 0
+  syncMode: 0
+  syncInterval: 0
   carRB: {fileID: 4107960498316859284}
   rayPoints:
   - {fileID: 1411730150251294138}
@@ -5315,7 +5321,6 @@ MonoBehaviour:
   skidSmokes:
   - {fileID: 6055725231162475405}
   - {fileID: 7299875650287950980}
-  isLocalPlayer: 1
   springStiffness: 30000
   damperStiffness: 3000
   restLength: 0.75
@@ -5417,6 +5422,73 @@ MonoBehaviour:
   iceBombPrefab: {fileID: 8385187716745718710, guid: 81c19dad76950aa48874a566ac2257f2, type: 3}
   iceBombPreviewPrefab: {fileID: 4456444403391069399, guid: f9964b1ef7bbb5e41860bd9528006246, type: 3}
   enableChickenFlock: 1
+--- !u!114 &4490114615830032202
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b91ecbcc199f4492b9a91e820070131, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Mirror::Mirror.NetworkIdentity
+  sceneId: 0
+  _assetId: 1315678393
+  serverOnly: 0
+  visibility: 0
+  hasSpawned: 0
+--- !u!114 &6313625600349125531
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a553cb17010b2403e8523b558bffbc14, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Mirror.Components::Mirror.NetworkTransformUnreliable
+  syncDirection: 1
+  syncMode: 0
+  syncInterval: 0
+  target: {fileID: 8102145736454384650}
+  syncPosition: 1
+  syncRotation: 1
+  syncScale: 0
+  onlySyncOnChange: 1
+  compressRotation: 1
+  interpolatePosition: 1
+  interpolateRotation: 1
+  interpolateScale: 0
+  coordinateSpace: 0
+  timelineOffset: 1
+  showGizmos: 0
+  showOverlay: 0
+  overlayColor: {r: 0, g: 0, b: 0, a: 0.5}
+  bufferResetMultiplier: 3
+  useFixedUpdate: 0
+  positionSensitivity: 0.01
+  rotationSensitivity: 0.01
+  scaleSensitivity: 0.01
+--- !u!114 &6020618234517215157
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e47d5687961aa3c4d8e2248df0534253, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarCameraFollow
+  syncDirection: 0
+  syncMode: 0
+  syncInterval: 0
+  carCam: {fileID: 101126786422396866}
 --- !u!1 &4378018966892394989
 GameObject:
   m_ObjectHideFlags: 0
