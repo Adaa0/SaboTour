@@ -1,4 +1,5 @@
 using UnityEngine;
+using Mirror;
 
 public class Checkpoint : MonoBehaviour
 {
@@ -11,16 +12,27 @@ public class Checkpoint : MonoBehaviour
 
         if (root.CompareTag("Player") && root.TryGetComponent(out PlayerRaceController player))
         {
-            player.ReachedCheckpoint(checkpointIndex, isFinishLine);
+            // Checkpoint tetiklemesi HER client'ın kendi fizik dünyasında
+            // olur (remote arabaların collider'ı da var), bu yüzden sadece
+            // aracın SAHİBİ Command gönderir — server'da tek sefer işlenir.
+            if (player.isOwned)
+                player.CmdReachedCheckpoint(checkpointIndex, isFinishLine);
 
-            // DriftTrap sistemini bilgilendir
-            CarController car = root.GetComponent<CarController>();
-            if (car != null)
+            // DriftTrap sistemini bilgilendir — SADECE SERVER'da. OnTriggerEnter
+            // her client'ın kendi fizik dünyasında ayrı ayrı tetikleniyor ama
+            // DriftTrap artık server-authoritative bir NetworkBehaviour; her
+            // client burada çağırırsa server'da olmayan, senkronize olmayan
+            // kopyalar (trapActive, trackedCars) oluşurdu.
+            if (NetworkServer.active)
             {
-                DriftTrap driftTrap = FindAnyObjectByType<DriftTrap>();
-                if (driftTrap != null)
+                CarController car = root.GetComponent<CarController>();
+                if (car != null)
                 {
-                    driftTrap.OnCarReachedCheckpoint(car, player, checkpointIndex);
+                    DriftTrap driftTrap = FindAnyObjectByType<DriftTrap>();
+                    if (driftTrap != null)
+                    {
+                        driftTrap.OnCarReachedCheckpoint(car, player, checkpointIndex);
+                    }
                 }
             }
         }

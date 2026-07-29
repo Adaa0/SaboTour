@@ -50,14 +50,33 @@ public class TrackGenerator : MonoBehaviour
             GenerateTrack();
     }
 
+    /// <summary>
+    /// Rastgele (DateTime tabanlı) bir seed ile pist üretir.
+    /// EDİTÖR BUTONU ve tek oyunculu test için kullanılır.
+    /// MULTIPLAYER'DA BUNU KULLANMA — TrackSeedSync.cs bunun yerine
+    /// GenerateTrackWithSeed(int) çağıracak, böylece host ve tüm client'lar
+    /// AYNI seed ile AYNI pisti üretir.
+    /// </summary>
     public void GenerateTrack()
     {
+        int randomSeed = (int)(System.DateTime.Now.Ticks % int.MaxValue);
+        GenerateTrackWithSeed(randomSeed);
+    }
+
+    /// <summary>
+    /// Belirli bir seed ile deterministik pist üretir. Aynı seed her zaman
+    /// aynı pisti üretir (Unity'nin Random sınıfı seed'e göre deterministik
+    /// çalışır) — bu yüzden host'un seed'ini client'lara göndermek yeterli,
+    /// tüm pist verisini network üzerinden göndermeye gerek yok.
+    /// </summary>
+    public void GenerateTrackWithSeed(int seedValue)
+    {
         ClearTrack();
-        _seed = (int)(System.DateTime.Now.Ticks % int.MaxValue);
+        _seed = seedValue;
         Random.InitState(_seed);
-        
+
         _trackPoints = CreateRacetrack();
-        
+
         if (_trackPoints != null && _trackPoints.Count > 2)
         {
             GenerateRoadMesh(_trackPoints);
@@ -154,12 +173,12 @@ public class TrackGenerator : MonoBehaviour
     private bool DoSegmentsIntersect(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4)
     {
         float d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
-        
+
         if (Mathf.Abs(d) < 0.0001f) return false;
-        
+
         float t = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / d;
         float u = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / d;
-        
+
         return t >= 0 && t <= 1 && u >= 0 && u <= 1;
     }
 
@@ -167,13 +186,13 @@ public class TrackGenerator : MonoBehaviour
     {
         Vector2 line = lineEnd - lineStart;
         float lineLength = line.magnitude;
-        
+
         if (lineLength < 0.0001f)
             return Vector2.Distance(point, lineStart);
-        
+
         float t = Mathf.Clamp01(Vector2.Dot(point - lineStart, line) / (lineLength * lineLength));
         Vector2 projection = lineStart + t * line;
-        
+
         return Vector2.Distance(point, projection);
     }
 
@@ -187,7 +206,7 @@ public class TrackGenerator : MonoBehaviour
             Vector2 curr = points[i];
             Vector2 next = points[(i + 1) % points.Count];
 
-            if (Vector2.Distance(prev, curr) < roadWidth * 0.8f || 
+            if (Vector2.Distance(prev, curr) < roadWidth * 0.8f ||
                 Vector2.Distance(curr, next) < roadWidth * 0.8f)
                 return false;
 
@@ -198,9 +217,9 @@ public class TrackGenerator : MonoBehaviour
             for (int j = i + 2; j < points.Count + i - 1; j++)
             {
                 int index = j % points.Count;
-                if (index == i || index == (i - 1 + points.Count) % points.Count) 
+                if (index == i || index == (i - 1 + points.Count) % points.Count)
                     continue;
-                
+
                 if (Vector2.Distance(curr, points[index]) < roadWidth * 1.5f)
                     return false;
             }
@@ -214,7 +233,7 @@ public class TrackGenerator : MonoBehaviour
             for (int j = i + 2; j < points.Count; j++)
             {
                 if (i == 0 && j == points.Count - 1) continue;
-                
+
                 Vector2 p3 = points[j];
                 Vector2 p4 = points[(j + 1) % points.Count];
 
@@ -232,7 +251,7 @@ public class TrackGenerator : MonoBehaviour
 
             for (int j = 0; j < points.Count; j++)
             {
-                if (j == i || j == (i + 1) % points.Count || 
+                if (j == i || j == (i + 1) % points.Count ||
                     j == (i - 1 + points.Count) % points.Count)
                     continue;
 
@@ -250,7 +269,7 @@ public class TrackGenerator : MonoBehaviour
         if (points.Count < 3) return points;
 
         var refined = new List<Vector2>(points);
-        
+
         for (int i = 0; i < iterations; i++)
         {
             int longestEdgeIndex = -1;
@@ -290,7 +309,7 @@ public class TrackGenerator : MonoBehaviour
 
                 var testRefined = new List<Vector2>(refined);
                 testRefined.Insert(longestEdgeIndex + 1, newPoint);
-                
+
                 if (ValidateTrackAnglesAndDistances(testRefined))
                 {
                     refined = testRefined;
@@ -301,7 +320,7 @@ public class TrackGenerator : MonoBehaviour
 
             if (!validPointFound) break;
         }
-        
+
         return refined;
     }
 
@@ -366,27 +385,27 @@ public class TrackGenerator : MonoBehaviour
         _checkpoints.Clear();
 
         int interval = Mathf.Max(1, trackPoints.Count / checkpointsPerLap);
-        
+
         for (int i = 0; i < checkpointsPerLap; i++)
         {
             int pointIndex = i * interval;
             if (pointIndex >= trackPoints.Count) pointIndex = trackPoints.Count - 1;
-            
+
             Vector3 pos = trackPoints[pointIndex];
             Vector3 nextPoint = trackPoints[(pointIndex + 1) % trackPoints.Count];
             Vector3 forward = (nextPoint - pos).normalized;
             Quaternion rotation = Quaternion.LookRotation(forward, Vector3.up);
-            
+
             GameObject cpObject = Instantiate(checkpointPrefab, pos + Vector3.up * 5f, rotation, transform);
             cpObject.name = $"Checkpoint_{i}";
-            
+
             Checkpoint cp = cpObject.GetComponent<Checkpoint>();
             if (cp != null)
             {
                 cp.checkpointIndex = i;
-                cp.isFinishLine = (i == checkpointsPerLap - 1);
+                cp.isFinishLine = (i == 0);
             }
-            
+
             _checkpoints.Add(cpObject);
         }
     }

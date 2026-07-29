@@ -7,6 +7,8 @@ public class IceBomb : MonoBehaviour
     public GameObject icePatchPrefab;
 
     [Header("Flash Settings")]
+    [Tooltip("Yanıp sönecek objenin Renderer'ı — örneğin bombanın sadece iç kısmı. Boş bırakılırsa dış objede ve child'larda otomatik aranır.")]
+    public Renderer flashTargetRenderer;
     public Material normalMat;
     public Material flashMat;
     public float flashSpeed = 0.15f;
@@ -17,13 +19,66 @@ public class IceBomb : MonoBehaviour
 
     private Renderer rend;
     private bool flashing = true;
+    private bool launched = false;
 
     void Start()
     {
-        rend = GetComponent<Renderer>();
-        rend.material = normalMat;
+        // Launch() ile fırlatılmadıysa (örneğin sahneye manuel yerleştirilip
+        // tek başına test ediliyorsa) eski davranış: hemen yanıp sön + patla.
+        if (!launched)
+            BeginCountdown();
+    }
 
-        StartCoroutine(FlashRoutine());
+    /// <summary>
+    /// IceBombSkill (server) tarafından ClientRpc üzerinden HER client'ta
+    /// çağrılır. Bombayı fırlatma noktasından hedefe deterministik bir
+    /// parabolik eğriyle uçurur — Rigidbody fiziği DEĞİL, çünkü her
+    /// client'ın aynı anda aynı sonucu görmesi lazım (bkz. CLAUDE.md madde
+    /// 8 "Buz Bombası Fırlatma Animasyonu"). Uçuş bitince patlama geri
+    /// sayımı BeginCountdown() ile başlar.
+    /// </summary>
+    public void Launch(Vector3 startPos, Vector3 endPos, float duration, float arcHeight)
+    {
+        launched = true;
+        transform.position = startPos;
+        StartCoroutine(FlightRoutine(startPos, endPos, duration, arcHeight));
+    }
+
+    private IEnumerator FlightRoutine(Vector3 start, Vector3 end, float duration, float arcHeight)
+    {
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float u = Mathf.Clamp01(t / duration);
+
+            Vector3 pos = Vector3.Lerp(start, end, u);
+            pos.y += arcHeight * 4f * u * (1f - u); // parabol: u=0 ve u=1'de 0, u=0.5'te tepe noktası
+            transform.position = pos;
+
+            yield return null;
+        }
+
+        transform.position = end;
+        BeginCountdown();
+    }
+
+    private void BeginCountdown()
+    {
+        // ÖNEMLİ: Renderer bulunamasa bile Explode() MUTLAKA zamanlanmalı —
+        // önceden rend.material ataması patlarsa bu metod tamamen duruyor ve
+        // bomba hiç patlamıyordu (yanıp sönme ile patlama zamanlaması aynı
+        // metodun içindeydi, biri çökünce diğeri de iptal oluyordu).
+        rend = flashTargetRenderer != null ? flashTargetRenderer : GetComponentInChildren<Renderer>();
+
+        if (rend == null)
+            Debug.LogWarning("[IceBomb] Yanıp sönecek bir Renderer bulunamadı (Flash Target Renderer atanmamış ve child'larda da yok). Yanıp sönme atlanıyor, bomba yine de patlayacak.");
+        else
+        {
+            rend.material = normalMat;
+            StartCoroutine(FlashRoutine());
+        }
+
         Invoke(nameof(Explode), delay);
     }
 
