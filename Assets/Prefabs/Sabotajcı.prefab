@@ -126,7 +126,7 @@ GameObject:
   - component: {fileID: 4113091501267940896}
   - component: {fileID: 2400631085358781309}
   - component: {fileID: 6561114263151070751}
-  - component: {fileID: 60351321395515904}
+  - component: {fileID: 7312867911308870832}
   m_Layer: 0
   m_Name: "Sabotajc\u0131"
   m_TagString: Untagged
@@ -144,8 +144,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 3, y: 3, z: 3}
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 4382188129125509073}
   - {fileID: 7823866365352040039}
@@ -189,7 +189,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Mirror::Mirror.NetworkIdentity
   sceneId: 0
-  _assetId: 0
+  _assetId: 1687778133
   serverOnly: 0
   visibility: 0
   hasSpawned: 0
@@ -246,13 +246,24 @@ MonoBehaviour:
   sprintSpeed: 6
   accelerationTime: 0.12
   gravity: -9.81
+  jumpHeight: 1.1
+  escUnlocksCursor: 1
+  blockMovementWhenUnlocked: 1
+  showCrosshair: 1
+  crosshairSize: 18
+  crosshairThickness: 2
+  crosshairColor: {r: 1, g: 1, b: 1, a: 0.8}
   mouseSensitivity: 2
   minPitch: -80
   maxPitch: 80
   lookSmoothing: 25
+  allowSensitivityAdjustment: 1
+  sensitivityStep: 0.2
+  minSensitivity: 0.2
+  maxSensitivity: 8
   fpCam: {fileID: 6819517073102545911}
   cameraPitchTransform: {fileID: 4382188129125509073}
---- !u!114 &60351321395515904
+--- !u!114 &7312867911308870832
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -261,12 +272,15 @@ MonoBehaviour:
   m_GameObject: {fileID: 4556662034015258871}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 58937a2b95774414394fd02c03dbc347, type: 3}
+  m_Script: {fileID: 11500000, guid: 1ebfd07ca3320444388ff43371a1e613, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SaboteurSkillInput
+  m_EditorClassIdentifier: Assembly-CSharp::SaboteurInteraction
   syncDirection: 0
   syncMode: 0
   syncInterval: 0
+  fpCam: {fileID: 4382188129125509073}
+  interactionRange: 8
+  showDebugLogs: 1
 --- !u!1 &6819517073102545911
 GameObject:
   m_ObjectHideFlags: 0
@@ -375,7 +389,7 @@ MonoBehaviour:
     m_Bits: 1
   m_VolumeTrigger: {fileID: 0}
   m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
+  m_RenderPostProcessing: 1
   m_Antialiasing: 0
   m_AntialiasingQuality: 2
   m_StopNaN: 0

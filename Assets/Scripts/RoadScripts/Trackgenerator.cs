@@ -29,6 +29,12 @@ public class TrackGenerator : MonoBehaviour
     [Range(5f, 50f)] public float roadWidth = 25f;
     public float uvTiling = 10f;
 
+    [Header("Merkez Boşluğu (Sabotajcı Kulesi)")]
+    [Tooltip("Pist üretildikten sonra dünya merkezine (0,0,0) ortalanır ve yolun merkezden uzak kalması garanti edilir — kule oraya dikilecek.")]
+    public bool keepCenterClear = true;
+    [Tooltip("Yolun KENARINDAN dünya merkezine olan en küçük mesafe. Yolun yarı genişliği otomatik ekleniyor.")]
+    public float centerClearance = 40f;
+
     [Header("Checkpoint Settings")]
     public GameObject checkpointPrefab;
     [Range(3, 30)] public int checkpointsPerLap = 10;
@@ -120,17 +126,25 @@ public class TrackGenerator : MonoBehaviour
 
     public List<Vector3> CreateRacetrack()
     {
-        List<Vector2> basePoints = null;
+        List<Vector2> basePoints;
+        List<Vector2> finalPath = null;
         int attempts = 0;
         const int maxAttempts = 100000;
 
-        do
+        while (true)
         {
             if (attempts > 0)
             {
                 _seed = Random.Range(0, int.MaxValue);
                 Random.InitState(_seed);
                 Debug.Log($"Attempting new track with seed: {_seed} (Attempt {attempts + 1})");
+            }
+
+            attempts++;
+            if (attempts > maxAttempts)
+            {
+                Debug.LogError("Could not generate a valid track after " + maxAttempts + " attempts. Check parameters.");
+                return new List<Vector3>();
             }
 
             var randomPoints = new List<Vector2>();
@@ -143,30 +157,121 @@ public class TrackGenerator : MonoBehaviour
             }
 
             basePoints = GetConvexHull(randomPoints);
-            if (basePoints.Count < 3)
-            {
-                attempts++;
-                continue;
-            }
+            if (basePoints.Count < 3) continue;
 
             basePoints = RefineTrackShape(basePoints, trackComplexity + Mathf.Max(0, minCorners - basePoints.Count));
-            if (basePoints.Count < 3)
+            if (basePoints.Count < 3) continue;
+
+            if (!ValidateTrackAnglesAndDistances(basePoints)) continue;
+
+            // Köşeleri Bezier ile yumuşat. Merkez boşluğu kontrolü BU son hal
+            // üzerinde yapılmalı — yol mesh'i de, minimap da bu noktaları
+            // kullanıyor, yani gerçekte görünen yol bu.
+            List<Vector2> curved = CurveCorners(basePoints);
+
+            if (keepCenterClear)
             {
-                attempts++;
-                continue;
+                curved = RecenterAroundOrigin(curved);
+
+                // Merkezde kuleye yer yoksa bu seed'i çöpe atıp yenisini dene.
+                // Ortalama alma sayesinde bu nadiren gerekiyor — sadece pistin
+                // merkeze doğru derin bir girinti yaptığı durumlar için güvenlik ağı.
+                if (!HasCenterClearance(curved)) continue;
             }
 
-            attempts++;
-            if (attempts >= maxAttempts)
-            {
-                Debug.LogError("Could not generate a valid track after " + maxAttempts + " attempts. Check parameters.");
-                return new List<Vector3>();
-            }
+            finalPath = curved;
+            break;
+        }
 
-        } while (!ValidateTrackAnglesAndDistances(basePoints));
-
-        _refinedPoints = CurveCorners(basePoints);
+        _refinedPoints = finalPath;
         return _refinedPoints.Select(p => new Vector3(p.x, 0, p.y)).ToList();
+    }
+
+    /// <summary>
+    /// Pisti dünya merkezine (0,0) taşır. NEDEN: Sabotajcı kulesi 0,0,0'a
+    /// dikilecek (CLAUDE.md madde 1/6), ama pist rastgele noktaların convex
+    /// hull'undan üretildiği için merkezi her seed'de başka yere kayıyordu.
+    ///
+    /// Ortalama (mean) DEĞİL, bounding box merkezi kullanılıyor: köşeler
+    /// Bezier ile onlarca noktaya bölündüğü için ortalama, virajın yoğun
+    /// olduğu tarafa doğru kayardı.
+    ///
+    /// Bu bir ÖTELEME (translation) olduğu için deterministik — aynı seed
+    /// her client'ta aynı pisti üretmeye devam ediyor.
+    /// </summary>
+    private List<Vector2> RecenterAroundOrigin(List<Vector2> points)
+    {
+        if (points == null || points.Count == 0) return points;
+
+        float minX = float.MaxValue, maxX = float.MinValue;
+        float minY = float.MaxValue, maxY = float.MinValue;
+
+        foreach (Vector2 p in points)
+        {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+
+        Vector2 center = new Vector2((minX + maxX) * 0.5f, (minY + maxY) * 0.5f);
+
+        var moved = new List<Vector2>(points.Count);
+        foreach (Vector2 p in points)
+            moved.Add(p - center);
+
+        return moved;
+    }
+
+    /// <summary>
+    /// Merkezde kuleye yer var mı? İki şeyi birlikte kontrol ediyor:
+    ///  1. Merkez pistin İÇİNDE mi — kule pistin ortasında kalmalı, merkezi
+    ///     dışarıda bırakan hilal şeklindeki pistler reddedilir.
+    ///  2. Yol merkeze yeterince uzak mı — yolun yarı genişliği ekleniyor,
+    ///     çünkü mesh merkez çizgisinin İKİ YANINA roadWidth/2 kadar uzuyor.
+    ///
+    /// Nokta mesafesi yerine SEGMENT mesafesi ölçülüyor: yol kesintisiz bir
+    /// şerit, iki örnek nokta arasından geçen kısım merkeze daha yakın olabilir.
+    /// </summary>
+    private bool HasCenterClearance(List<Vector2> points)
+    {
+        if (points == null || points.Count < 3) return false;
+        if (!IsOriginInsideTrack(points)) return false;
+
+        float required = roadWidth * 0.5f + centerClearance;
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            Vector2 a = points[i];
+            Vector2 b = points[(i + 1) % points.Count];
+
+            if (DistancePointToSegment(Vector2.zero, a, b) < required)
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Ray casting (ışın atma) yöntemi: 0,0 noktasından bir yöne ışın atıp
+    /// pistin kaç kenarını kestiğini sayıyor — TEK sayı ise nokta içeride,
+    /// ÇİFT sayı ise dışarıda. Kapalı bir eğri için standart yöntem.
+    /// </summary>
+    private static bool IsOriginInsideTrack(List<Vector2> points)
+    {
+        bool inside = false;
+
+        for (int i = 0, j = points.Count - 1; i < points.Count; j = i++)
+        {
+            Vector2 pi = points[i];
+            Vector2 pj = points[j];
+
+            if ((pi.y > 0f) != (pj.y > 0f) &&
+                0f < (pj.x - pi.x) * (0f - pi.y) / (pj.y - pi.y) + pi.x)
+                inside = !inside;
+        }
+
+        return inside;
     }
 
     #region Track Shape Generation
@@ -373,6 +478,15 @@ public class TrackGenerator : MonoBehaviour
     #region Checkpoint & Mesh Generation
     public List<GameObject> GetCheckpoints() => _checkpoints;
 
+    /// <summary>
+    /// Yolun tam eğrisi (köşeleri Bezier ile yumuşatılmış, yüzlerce nokta).
+    /// Yol mesh'i bu noktalardan üretiliyor — MinimapController da aynı
+    /// noktaları kullanarak minimap'te gerçek pist şeklini çiziyor
+    /// (checkpoint'leri düz çizgiyle birleştirmek yerine).
+    /// Pist henüz üretilmediyse null döner.
+    /// </summary>
+    public List<Vector3> GetTrackPoints() => _trackPoints;
+
     private void GenerateCheckpoints(List<Vector3> trackPoints)
     {
         if (checkpointPrefab == null || checkpointsPerLap <= 0) return;
@@ -535,6 +649,14 @@ public class TrackGenerator : MonoBehaviour
                 Gizmos.color = checkpoint.isFinishLine ? Color.red : Color.green;
                 Gizmos.DrawCube(cp.transform.position, Vector3.one * 5f);
             }
+        }
+
+        // Kuleye ayrılan merkez alanı göster — kuleyi sahneye yerleştirirken
+        // bu dairenin içinde kalmasına bakabilirsin.
+        if (keepCenterClear && _refinedPoints != null && _refinedPoints.Count > 0)
+        {
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(Vector3.zero, centerClearance + roadWidth * 0.5f);
         }
     }
     #endregion

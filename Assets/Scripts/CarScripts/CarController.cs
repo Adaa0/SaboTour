@@ -68,6 +68,18 @@ public class CarController : NetworkBehaviour
     [SyncVar(hook = nameof(OnVelocityRatioChanged))]
     private float netVelocityRatio;
 
+    // Vfx()'teki skid/smoke kontrolü currentCarLocalVelocity.x'e (yanal hız)
+    // bakıyor, ama bu değer sadece owner'ın FixedUpdate'inde hesaplanıyordu
+    // ve hiç senkronize edilmiyordu — bu yüzden BAŞKA client'ların arabasına
+    // bakarken (spectator, kule, başka oyuncu) skidmark/smoke HİÇ görünmüyordu.
+    [SyncVar(hook = nameof(OnLocalVelocityXChanged))]
+    private float netLocalVelocityX;
+
+    private void OnLocalVelocityXChanged(float oldValue, float newValue)
+    {
+        if (!isOwned) currentCarLocalVelocity.x = newValue;
+    }
+
     private void OnDriftingChanged(bool oldValue, bool newValue)
     {
         if (!isOwned) isDrifting = newValue;
@@ -313,15 +325,58 @@ public class CarController : NetworkBehaviour
         netIsDrifting = isDrifting;
         netIsGrounded = isGrounded;
         netVelocityRatio = carVelocityRatio;
+        netLocalVelocityX = currentCarLocalVelocity.x;
+
+        // GEÇİCİ TEŞHİS LOGU — sorunun tam olarak nerede koptuğunu görmek için.
+        // Sadece belirgin bir şekilde dönerken/driftteyken loglanıyor (spam olmasın).
+        if (Mathf.Abs(steerInput) > 0.3f || isDrifting)
+        {
+            Debug.Log($"[CarController-DEBUG][YAZAN] netId={netId} isServer={isServer} isClient={isClient} " +
+                      $"steerInput={steerInput:F2}→netSteerInput={netSteerInput:F2} isDrifting={isDrifting}");
+        }
     }
 
     private void Update()
     {
         if (isOwned)
+        {
             GetPlayerInput();
+        }
+        else
+        {
+            // ÖNEMLİ: SyncVar hook'larına GÜVENMİYORUZ — host kendisi sunucu
+            // olduğu için (host = server + client aynı süreçte), host'un
+            // yerel görünümü network'ten "deserialize" ederek veri almıyor,
+            // hook'lar da SADECE deserialize anında tetikleniyor. Yani host,
+            // BAŞKA bir client'ın arabasına baktığında hook'lar hiç çalışmıyor
+            // — ham SyncVar değeri (netSteerInput vb.) doğru gelse bile, onu
+            // görsel alanlara kopyalayan hook atlanıyor, araba "donmuş" görünüyor.
+            //
+            // Çözüm: hook'u beklemeden, HER KAREDE ham senkronize değerleri
+            // doğrudan buradan kopyalıyoruz — host olsun client olsun,
+            // davranış artık tutarlı.
+            steerInput = netSteerInput;
+            isDrifting = netIsDrifting;
+            isGrounded = netIsGrounded;
+            carVelocityRatio = netVelocityRatio;
+            currentCarLocalVelocity.x = netLocalVelocityX;
+
+            ApplyRemoteTirePosition(0, netTire0LocalPos);
+            ApplyRemoteTirePosition(1, netTire1LocalPos);
+            ApplyRemoteTirePosition(2, netTire2LocalPos);
+            ApplyRemoteTirePosition(3, netTire3LocalPos);
+
+            // GEÇİCİ TEŞHİS LOGU — bu makine (host ya da başka client) bu
+            // arabanın senkronize verisini okurken ne görüyor.
+            if (Mathf.Abs(netSteerInput) > 0.3f || netIsDrifting)
+            {
+                Debug.Log($"[CarController-DEBUG][OKUYAN] netId={netId} isServer={isServer} isClient={isClient} " +
+                          $"netSteerInput={netSteerInput:F2}→steerInput={steerInput:F2} netIsDrifting={netIsDrifting}");
+            }
+        }
 
         // Visuals HERKESTE çalışıyor — owner'da taze hesaplanan, remote'da
-        // SyncVar hook'larından gelen değerlerle aynı kod çalışıyor.
+        // yukarıda kopyalanan değerlerle aynı kod çalışıyor.
         Visuals();
     }
 
