@@ -2,16 +2,26 @@ using UnityEngine;
 using Mirror;
 
 /// <summary>
-/// Editor'de (Multiplayer Play Mode ile hızlı solo test) KCP transport'unu,
-/// gerçek build'de FizzySteamworks'ü (Steam ağı) kullanır.
+/// Hangi Mirror transport'unun kullanılacağını belirler: KCP (localhost/LAN)
+/// ya da FizzySteamworks (Steam P2P).
 ///
-/// NEDEN GEREKLİ: Multiplayer Play Mode'un ikinci "sanal oyuncusu" da AYNI
+/// MANUEL SEÇİM: Eskiden bu seçim `#if UNITY_EDITOR` ile OTOMATİK yapılıyordu
+/// (Editor'de KCP, build'de Steam). Ama Multiplayer Play Mode'un sanal
+/// oyuncusu beklendiği gibi davranmayıp Steam transport'unu açtı — client
+/// penceresinde "localhost:7777" yerine SteamID kutusu çıktı. Bu yüzden
+/// otomatik seçim kaldırıldı: artık aşağıdaki `mode` alanından ELLE
+/// seçiliyor, ne seçtiysen o çalışıyor.
+///
+/// NASIL KULLANILIR:
+///  • Günlük geliştirme / Multiplayer Play Mode testleri → `Kcp`
+///  • Build alıp arkadaşınla Steam üzerinden oynayacaksan → `Steam`
+///    (Build almadan ÖNCE bu alanı Steam'e çevirip sahneyi KAYDET.)
+///
+/// NEDEN İKİSİ AYRI: Multiplayer Play Mode'un ikinci "sanal oyuncusu" da AYNI
 /// bilgisayardaki AYNI Steam hesabıyla çalışıyor — host ve client aynı
-/// SteamID'ye sahip olunca Steam P2P bağlantısı "kendi kendine" bağlanmaya
-/// çalışır, bu desteklenmiyor/güvenilir değil. Bu yüzden günlük geliştirme
-/// testleri için Editor'de KCP'ye (LAN/localhost, Steam'e ihtiyaç duymaz)
-/// geri dönülüyor. Gerçek build'de (arkadaşlarla Steam üzerinden oynanan
-/// asıl senaryoda) FizzySteamworks aktif kalıyor.
+/// SteamID'ye sahip olunca Steam P2P "kendi kendine" bağlanmaya çalışır, bu
+/// güvenilir değil. KCP ise localhost üzerinden çalışır, Steam'in açık olması
+/// bile gerekmez.
 ///
 /// [DefaultExecutionOrder(-10000)] ile SteamManager'dan (-9999) bile önce
 /// çalışıyor — NetworkManager host/client başlatmadan ÖNCE doğru transport
@@ -20,10 +30,25 @@ using Mirror;
 [DefaultExecutionOrder(-10000)]
 public class TransportSwitcher : MonoBehaviour
 {
-    [Tooltip("Editor'de (Play modunda) kullanılacak transport — KcpTransport.")]
-    [SerializeField] private Transport editorTransport;
-    [Tooltip("Gerçek build'de kullanılacak transport — FizzySteamworks.")]
-    [SerializeField] private Transport buildTransport;
+    public enum TransportMode
+    {
+        /// <summary>localhost / LAN. Editor testleri için.</summary>
+        Kcp,
+        /// <summary>Steam P2P. Gerçek build için.</summary>
+        Steam
+    }
+
+    [Header("Seçim")]
+    [Tooltip("HANGİ TRANSPORT KULLANILSIN? Editor testleri için Kcp, " +
+             "Steam build'i alırken Steam. Build almadan önce değiştirip " +
+             "sahneyi kaydetmeyi unutma.")]
+    [SerializeField] private TransportMode mode = TransportMode.Kcp;
+
+    [Header("Referanslar")]
+    [Tooltip("KcpTransport component'i — localhost:7777 ile bağlanılan.")]
+    [SerializeField] private Transport kcpTransport;
+    [Tooltip("FizzySteamworks component'i — SteamID ile bağlanılan.")]
+    [SerializeField] private Transport steamTransport;
 
     void Awake()
     {
@@ -34,19 +59,16 @@ public class TransportSwitcher : MonoBehaviour
             return;
         }
 
-#if UNITY_EDITOR
-        Transport chosen = editorTransport;
-        Transport other = buildTransport;
-        string label = "Editor → KCP";
-#else
-        Transport chosen = buildTransport;
-        Transport other = editorTransport;
-        string label = "Build → FizzySteamworks";
-#endif
+        bool useSteam = mode == TransportMode.Steam;
+
+        Transport chosen = useSteam ? steamTransport : kcpTransport;
+        Transport other = useSteam ? kcpTransport : steamTransport;
 
         if (chosen == null)
         {
-            Debug.LogWarning($"[TransportSwitcher] Seçilecek transport atanmamış ({label})!");
+            Debug.LogError($"[TransportSwitcher] '{mode}' seçili ama ilgili transport " +
+                           $"alanı Inspector'da BOŞ! NetworkManager objesinde " +
+                           $"{(useSteam ? "Steam Transport" : "Kcp Transport")} alanını doldur.");
             return;
         }
 
@@ -54,6 +76,6 @@ public class TransportSwitcher : MonoBehaviour
         nm.transport = chosen;
         if (other != null) other.enabled = false;
 
-        Debug.Log($"[TransportSwitcher] Aktif transport: {label}");
+        Debug.Log($"[TransportSwitcher] Aktif transport: {mode} ({chosen.GetType().Name})");
     }
 }

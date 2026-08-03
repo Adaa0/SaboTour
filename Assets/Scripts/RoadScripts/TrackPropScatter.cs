@@ -70,6 +70,14 @@ public class TrackPropScatter : MonoBehaviour
     [Tooltip("Propların collider'ları kaldırılsın mı? Sadece dekorsa AÇIK bırak — çok sayıda collider performansı düşürür.")]
     [SerializeField] private bool removeColliders = true;
 
+    [Tooltip("Prop dizilimi pistin seed'inden türetiliyor, yani aynı pistte hep " +
+             "aynı dizilim çıkar. Bu sayıyı değiştirirsen PİST AYNI KALIR ama " +
+             "ağaç/kaya dizilimi tamamen değişir. Inspector'daki 'Farklı Dizilim " +
+             "Dene' butonu bunu 1 artırıyor.\n\n" +
+             "NETWORK NOTU: Bu değer sahneyle birlikte kaydedildiği için tüm " +
+             "oyuncularda aynı olur — dizilim senkron kalır, ekstra mesaj gerekmez.")]
+    [SerializeField] private int propSeedOffset = 0;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = true;
 
@@ -106,6 +114,21 @@ public class TrackPropScatter : MonoBehaviour
 
     public void Scatter()
     {
+        // Start() sadece Play modunda çalışıyor, bu yüzden editör butonundan
+        // çağrıldığında trackGenerator henüz atanmamış olur — burada çözüyoruz.
+        if (trackGenerator == null)
+        {
+            trackGenerator = GetComponent<TrackGenerator>();
+            if (trackGenerator == null)
+                trackGenerator = FindAnyObjectByType<TrackGenerator>();
+        }
+
+        if (trackGenerator == null)
+        {
+            Debug.LogWarning("[TrackPropScatter] TrackGenerator bulunamadı — prop serpiştirilemiyor.");
+            return;
+        }
+
         if (propPrefabs == null || propPrefabs.Length == 0)
         {
             if (showDebugLogs)
@@ -124,7 +147,7 @@ public class TrackPropScatter : MonoBehaviour
         // Seed'den türetilen rastgelelik → her client'ta aynı sonuç.
         // UnityEngine.Random yerine System.Random: global Random durumunu
         // bozmuyor (başka sistemler ondan sayı çekiyor olabilir).
-        System.Random rng = new System.Random(trackGenerator.seed);
+        System.Random rng = new System.Random(trackGenerator.seed + propSeedOffset);
 
         float halfRoad = trackGenerator.roadWidth * 0.5f;
         float distanceSinceLastProp = 0f;
@@ -210,7 +233,21 @@ public class TrackPropScatter : MonoBehaviour
 
         if (removeColliders)
             foreach (Collider col in prop.GetComponentsInChildren<Collider>())
-                Destroy(col);
+                DestroySafe(col);
+    }
+
+    /// <summary>
+    /// Play modunda Destroy, Editör'de DestroyImmediate kullanır. Unity edit
+    /// modunda Destroy() çağrısını reddedip hata basıyor ("Destroy may not be
+    /// called from edit mode"), o yüzden serpiştirmeyi editörden tetikleyebilmek
+    /// için bu sarmalayıcı gerekli.
+    /// </summary>
+    private static void DestroySafe(UnityEngine.Object target)
+    {
+        if (target == null) return;
+
+        if (Application.isPlaying) Destroy(target);
+        else DestroyImmediate(target);
     }
 
     /// <summary>
@@ -231,14 +268,27 @@ public class TrackPropScatter : MonoBehaviour
         return false;
     }
 
+    /// <summary>
+    /// Sahnedeki propları siler. Inspector'daki "Propları Temizle" butonu
+    /// bunu çağırıyor — ClearProps() private olduğu için dışarıya açık bir
+    /// giriş noktası gerekiyordu.
+    /// </summary>
+    public void ClearAllProps()
+    {
+        ClearProps();
+
+        if (showDebugLogs)
+            Debug.Log("[TrackPropScatter] Proplar temizlendi.");
+    }
+
     private void ClearProps()
     {
         if (propContainer != null)
-            Destroy(propContainer.gameObject);
+            DestroySafe(propContainer.gameObject);
 
         // Sahnede eski bir konteyner kalmışsa (ör. sahne yeniden yüklendiyse) onu da temizle
         Transform existing = transform.Find("TrackProps");
-        if (existing != null) Destroy(existing.gameObject);
+        if (existing != null) DestroySafe(existing.gameObject);
     }
 
     /// <summary>System.Random 0-1 arası float üretmiyor, kendimiz sarmalıyoruz.</summary>

@@ -61,6 +61,25 @@ public class MinimapController : MonoBehaviour
     [Header("Yükseklikler (zeminden itibaren, çakışmayı önlemek için)")]
     [SerializeField] private float roadHeight = 0.005f;
     [SerializeField] private float markerHeight = 0.02f;
+
+    [Header("Kenarlık (Kerb)")]
+    [Tooltip("Minimap'teki yolun iki yanına gerçek pistteki gibi kırmızı-beyaz kenarlık çizilsin mi?")]
+    [SerializeField] private bool drawCurbs = true;
+    [Tooltip("Boş bırakılırsa kırmızı-beyaz çizgili bir doku otomatik üretilir.")]
+    [SerializeField] private Material curbMaterial;
+    [Tooltip("Minimap'te tek bir kırmızı/beyaz bandın uzunluğu (minimap birimi). " +
+             "Gerçek pistteki curbStripeLength'ten bağımsız — minimap çok küçük " +
+             "olduğu için orada okunabilir bir değer burada aşırı sık görünür.")]
+    [SerializeField] private float curbStripeLength = 0.05f;
+    [Tooltip("Kenarlığın yoldan ne kadar yukarıda çizileceği. Yolla aynı seviyede " +
+             "olursa iki yüzey birbirine girip titrer (z-fighting).")]
+    [SerializeField] private float curbHeight = 0.006f;
+
+    [Tooltip("Minimap kenarlığının kalınlık çarpanı. 1 = gerçek pistle birebir " +
+             "orantılı (minimap küçük olduğu için genelde çok ince kalır). " +
+             "Büyütmek SADECE minimap'i etkiler, gerçek pistteki kenarlığa dokunmaz.")]
+    [Range(0.5f, 10f)]
+    [SerializeField] private float curbWidthMultiplier = 3f;
     [SerializeField] private float carHeight = 0.03f;
 
     [Header("Görünüm")]
@@ -78,6 +97,7 @@ public class MinimapController : MonoBehaviour
     private readonly Dictionary<PlayerRaceController, Transform> carMarkers = new Dictionary<PlayerRaceController, Transform>();
 
     private GameObject roadObject;
+    private GameObject curbObject;
     private static Shader cachedUnlitShader;
 
     // Dünya → minimap dönüşümü için hesaplanan değerler
@@ -337,6 +357,165 @@ public class MinimapController : MonoBehaviour
         MeshFilter filter = roadObject.GetComponent<MeshFilter>();
         if (filter.mesh != null) Destroy(filter.mesh);
         filter.mesh = mesh;
+
+        DrawCurbs(trackPoints, halfWidth);
+    }
+
+    /// <summary>
+    /// Minimap'teki yolun iki yanına kırmızı-beyaz kenarlık çizer — gerçek
+    /// pistteki TrackGenerator.GenerateCurbMesh() ile aynı mantık, minimap
+    /// ölçeğine uyarlanmış hali.
+    ///
+    /// Gerçek pistten iki farkı var:
+    ///  1. KABARTMA YOK — minimap yukarıdan bakılan düz bir çizim, dış kenarı
+    ///     yükseltmek burada anlamsız olurdu. Sadece yolun birazcık üstünde
+    ///     duruyor ki iki yüzey birbirine girip titremesin (z-fighting).
+    ///  2. Bant uzunluğu ayrı bir alandan geliyor — minimap gerçek pistin
+    ///     yüzde biri kadar bir alana sığdığı için gerçek değer burada
+    ///     görünmeyecek kadar sık desen üretirdi.
+    /// </summary>
+    private void DrawCurbs(List<Vector3> trackPoints, float roadHalfWidth)
+    {
+        if (curbObject != null)
+        {
+            Destroy(curbObject);
+            curbObject = null;
+        }
+
+        if (!drawCurbs || trackPoints == null || trackPoints.Count < 3) return;
+
+        curbObject = new GameObject("MinimapCurbs");
+        curbObject.transform.SetParent(mapRoot, false);
+        curbObject.transform.localPosition = Vector3.zero;
+        curbObject.transform.localRotation = Quaternion.identity;
+        curbObject.AddComponent<MeshFilter>();
+        curbObject.AddComponent<MeshRenderer>().material =
+            curbMaterial != null ? curbMaterial : MakeCurbStripeMaterial();
+
+        // Kenarlık genişliği gerçek pistteki curbWidth'ten türetiliyor, ama
+        // minimap çok küçük olduğu için birebir oran burada saç teli gibi
+        // kalıyor — curbWidthMultiplier ile okunabilir kalınlığa çıkarılıyor.
+        float curbW = trackGenerator.curbWidth * worldToMapScale * roadWidthMultiplier * curbWidthMultiplier;
+
+        int count = trackPoints.Count;
+        var vertices = new List<Vector3>();
+        var triangles = new List<int>();
+        var uvs = new List<Vector2>();
+
+        // Minimap koordinatındaki toplam uzunluk — deseni halkaya tam
+        // oturtmak için gerekiyor (gerçek pisttekiyle aynı düzeltme).
+        float totalLength = 0f;
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 a = WorldToMapLocal(trackPoints[i], curbHeight);
+            Vector3 b = WorldToMapLocal(trackPoints[(i + 1) % count], curbHeight);
+            totalLength += Vector3.Distance(a, b);
+        }
+
+        int stripeCount = Mathf.Max(1, Mathf.RoundToInt(totalLength / Mathf.Max(0.0001f, curbStripeLength)));
+        float fittedStripeLength = totalLength / stripeCount;
+
+        for (int side = 0; side < 2; side++)
+        {
+            float sideSign = (side == 0) ? -1f : 1f;
+            int sideStartIndex = vertices.Count;
+
+            float cumulative = 0f;
+            Vector3 lastRight = Vector3.right;
+
+            // Son noktadan sonra ilk noktanın KOPYASI ekleniyor — böylece
+            // halkanın kapandığı yerde UV değeri sıfıra düşüp deseni
+            // sıkıştırmıyor (gerçek pistte yaşanan bugun aynısı).
+            for (int i = 0; i <= count; i++)
+            {
+                int pointIndex = i % count;
+
+                Vector3 curr = WorldToMapLocal(trackPoints[pointIndex], curbHeight);
+                Vector3 next = WorldToMapLocal(trackPoints[(pointIndex + 1) % count], curbHeight);
+
+                if (i > 0)
+                {
+                    Vector3 prev = WorldToMapLocal(trackPoints[(i - 1) % count], curbHeight);
+                    cumulative += Vector3.Distance(prev, curr);
+                }
+
+                Vector3 dir = next - curr;
+                Vector3 right = dir.sqrMagnitude > 0.0000001f
+                    ? Vector3.Cross(Vector3.up, dir.normalized).normalized
+                    : lastRight;
+                lastRight = right;
+
+                vertices.Add(curr + right * (sideSign * roadHalfWidth));
+                vertices.Add(curr + right * (sideSign * (roadHalfWidth + curbW)));
+
+                float v = cumulative / fittedStripeLength;
+                uvs.Add(new Vector2(0f, v));
+                uvs.Add(new Vector2(1f, v));
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                int baseIndex = sideStartIndex + i * 2;
+                int nextIndex = sideStartIndex + (i + 1) * 2;
+
+                // Sağ kenarlık yolla aynı sarımı, sol kenarlık ters sarımı
+                // kullanmalı — yoksa yüzü aşağı bakıp görünmez olur.
+                if (sideSign > 0f)
+                {
+                    triangles.Add(baseIndex);
+                    triangles.Add(nextIndex);
+                    triangles.Add(baseIndex + 1);
+
+                    triangles.Add(nextIndex);
+                    triangles.Add(nextIndex + 1);
+                    triangles.Add(baseIndex + 1);
+                }
+                else
+                {
+                    triangles.Add(baseIndex);
+                    triangles.Add(baseIndex + 1);
+                    triangles.Add(nextIndex);
+
+                    triangles.Add(nextIndex);
+                    triangles.Add(baseIndex + 1);
+                    triangles.Add(nextIndex + 1);
+                }
+            }
+        }
+
+        Mesh mesh = new Mesh { name = "MinimapCurbMesh" };
+        mesh.vertices = vertices.ToArray();
+        mesh.triangles = triangles.ToArray();
+        mesh.uv = uvs.ToArray();
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+
+        curbObject.GetComponent<MeshFilter>().mesh = mesh;
+    }
+
+    /// <summary>
+    /// Kırmızı-beyaz çizgili unlit materyal — minimap'in diğer parçaları gibi
+    /// ışıktan etkilenmiyor ki masanın üstünde her açıdan aynı okunsun.
+    /// </summary>
+    private static Material MakeCurbStripeMaterial()
+    {
+        const int size = 32;
+        var texture = new Texture2D(size, size) { name = "MinimapCurbStripes" };
+
+        for (int y = 0; y < size; y++)
+        {
+            Color stripe = (y < size / 2) ? Color.red : Color.white;
+            for (int x = 0; x < size; x++)
+                texture.SetPixel(x, y, stripe);
+        }
+
+        texture.filterMode = FilterMode.Point;
+        texture.wrapMode = TextureWrapMode.Repeat;
+        texture.Apply();
+
+        Material material = MakeUnlitMaterial(Color.white);
+        material.mainTexture = texture;
+        return material;
     }
 
     private void BuildCheckpointMarkers()
