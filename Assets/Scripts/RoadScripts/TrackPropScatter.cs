@@ -33,16 +33,31 @@ public class TrackPropScatter : MonoBehaviour
 
     [Header("Yoğunluk")]
     [Tooltip("Yol boyunca kaç birimde bir prop denemesi yapılsın. Küçük değer = daha sık.")]
-    [SerializeField] private float spacing = 12f;
+    [SerializeField] private float spacing = 6f;
     [Tooltip("Her denemede prop koyma ihtimali (1 = her seferinde, 0.5 = yarısında). Düzenli sıra görünümünü kırar.")]
     [Range(0f, 1f)]
-    [SerializeField] private float spawnChance = 0.7f;
+    [SerializeField] private float spawnChance = 0.85f;
+    [Tooltip("Yol boyunca her durakta, HER TARAF için kaç prop denensin. " +
+             "1 = eski davranış (yolu takip eden tek sıra). Büyütürsen çevre " +
+             "bir şerit değil, gerçek bir orman gibi dolar.")]
+    [Range(1, 10)]
+    [SerializeField] private int propsPerSide = 3;
     [SerializeField] private bool bothSides = true;
 
     [Header("Yoldan Uzaklık")]
     [Tooltip("Yol KENARINDAN itibaren en yakın mesafe (yolun yarı genişliği otomatik ekleniyor).")]
     [SerializeField] private float minDistanceFromRoad = 4f;
-    [SerializeField] private float maxDistanceFromRoad = 25f;
+    [Tooltip("Yol kenarından en uzak mesafe. Bunu büyütmek 'çevre'yi büyüten " +
+             "asıl ayar — proplar yola yapışık bir şerit yerine geniş bir alana yayılır.")]
+    [SerializeField] private float maxDistanceFromRoad = 120f;
+
+    [Tooltip("Propların yol yönünde rastgele kaydırılma miktarı (metre). " +
+             "0 ise proplar düzgün sıralar halinde dizilir ve yapay görünür.")]
+    [SerializeField] private float forwardJitter = 4f;
+
+    [Tooltip("Güvenlik sınırı — toplam prop sayısı bunu aşmaz. " +
+             "Yoğunluk ayarlarını fazla açarsan sahne kilitlenmesin diye.")]
+    [SerializeField] private int maxProps = 2500;
 
     [Header("Çeşitlilik")]
     [SerializeField] private bool randomYaw = true;
@@ -128,30 +143,50 @@ public class TrackPropScatter : MonoBehaviour
             if (dir.sqrMagnitude < 0.0001f) continue;
             Vector3 right = Vector3.Cross(Vector3.up, dir.normalized).normalized;
 
+            Vector3 forward = dir.normalized;
+
             // Sağ ve/veya sol taraf
             int sideCount = bothSides ? 2 : 1;
             for (int s = 0; s < sideCount; s++)
             {
-                if (NextFloat(rng) > spawnChance) continue;
+                // Her tarafta birden fazla prop deneniyor — çevrenin bir şerit
+                // değil, dolu bir alan gibi görünmesini sağlayan kısım bu.
+                for (int p = 0; p < propsPerSide; p++)
+                {
+                    if (placedCount >= maxProps) break;
+                    if (NextFloat(rng) > spawnChance) continue;
 
-                float side = (s == 0) ? 1f : -1f;
-                float distance = halfRoad + Mathf.Lerp(minDistanceFromRoad, maxDistanceFromRoad, NextFloat(rng));
-                Vector3 position = curr + right * side * distance;
-                position.y += heightOffset;
+                    float side = (s == 0) ? 1f : -1f;
+                    float distance = halfRoad + Mathf.Lerp(minDistanceFromRoad, maxDistanceFromRoad, NextFloat(rng));
 
-                // Pist kendi üstüne kıvrıldığında prop, yolun BAŞKA bir
-                // bölümünün üstüne düşebilir — o yüzden tüm yola olan
-                // mesafeyi kontrol edip çakışanları atlıyoruz.
-                if (IsTooCloseToRoad(position, trackPoints, halfRoad + minDistanceFromRoad * 0.5f))
-                    continue;
+                    // Yol yönünde rastgele kaydırma — bu olmadan proplar
+                    // duraklara hizalanıp görünür sıralar oluşturuyor.
+                    float jitter = (NextFloat(rng) * 2f - 1f) * forwardJitter;
 
-                PlaceProp(position, rng);
-                placedCount++;
+                    Vector3 position = curr + right * side * distance + forward * jitter;
+                    position.y += heightOffset;
+
+                    // Pist kendi üstüne kıvrıldığında prop, yolun BAŞKA bir
+                    // bölümünün üstüne düşebilir — o yüzden tüm yola olan
+                    // mesafeyi kontrol edip çakışanları atlıyoruz.
+                    if (IsTooCloseToRoad(position, trackPoints, halfRoad + minDistanceFromRoad * 0.5f))
+                        continue;
+
+                    PlaceProp(position, rng);
+                    placedCount++;
+                }
             }
+
+            if (placedCount >= maxProps) break;
         }
 
         if (showDebugLogs)
-            Debug.Log($"[TrackPropScatter] {placedCount} prop yerleştirildi (seed {trackGenerator.seed}).");
+        {
+            string capNote = placedCount >= maxProps
+                ? $" — ÜST SINIRA TAKILDI ({maxProps}). Daha fazlası için Max Props'u yükselt."
+                : "";
+            Debug.Log($"[TrackPropScatter] {placedCount} prop yerleştirildi (seed {trackGenerator.seed}).{capNote}");
+        }
     }
 
     private void PlaceProp(Vector3 position, System.Random rng)

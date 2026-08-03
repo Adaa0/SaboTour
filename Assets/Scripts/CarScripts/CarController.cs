@@ -326,14 +326,6 @@ public class CarController : NetworkBehaviour
         netIsGrounded = isGrounded;
         netVelocityRatio = carVelocityRatio;
         netLocalVelocityX = currentCarLocalVelocity.x;
-
-        // GEÇİCİ TEŞHİS LOGU — sorunun tam olarak nerede koptuğunu görmek için.
-        // Sadece belirgin bir şekilde dönerken/driftteyken loglanıyor (spam olmasın).
-        if (Mathf.Abs(steerInput) > 0.3f || isDrifting)
-        {
-            Debug.Log($"[CarController-DEBUG][YAZAN] netId={netId} isServer={isServer} isClient={isClient} " +
-                      $"steerInput={steerInput:F2}→netSteerInput={netSteerInput:F2} isDrifting={isDrifting}");
-        }
     }
 
     private void Update()
@@ -365,14 +357,6 @@ public class CarController : NetworkBehaviour
             ApplyRemoteTirePosition(1, netTire1LocalPos);
             ApplyRemoteTirePosition(2, netTire2LocalPos);
             ApplyRemoteTirePosition(3, netTire3LocalPos);
-
-            // GEÇİCİ TEŞHİS LOGU — bu makine (host ya da başka client) bu
-            // arabanın senkronize verisini okurken ne görüyor.
-            if (Mathf.Abs(netSteerInput) > 0.3f || netIsDrifting)
-            {
-                Debug.Log($"[CarController-DEBUG][OKUYAN] netId={netId} isServer={isServer} isClient={isClient} " +
-                          $"netSteerInput={netSteerInput:F2}→steerInput={steerInput:F2} netIsDrifting={netIsDrifting}");
-            }
         }
 
         // Visuals HERKESTE çalışıyor — owner'da taze hesaplanan, remote'da

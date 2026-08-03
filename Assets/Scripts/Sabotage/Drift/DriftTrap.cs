@@ -26,6 +26,10 @@ public class DriftTrap : NetworkBehaviour
     [SerializeField] private float entryWindowSeconds = 10f;
     [SerializeField] private float penaltyMultiplier = 2f;
 
+    [Header("Cooldown")]
+    [Tooltip("Tuzak kurulduktan sonra bu skilin tekrar kullanılabilir olması için beklenmesi gereken süre (entryWindowSeconds'tan bağımsız).")]
+    [SerializeField] private float skillCooldownSeconds = 15f;
+
     [Header("Checkpoint Seçim Göstergesi")]
     [Tooltip("Eskiden CheckpointSpawner'da kullanılan kırmızı ok prefabı (Assets/Prefabs/Ok.prefab). Seçilen checkpoint'in üzerinde belirir.")]
     [SerializeField] private GameObject checkpointArrowPrefab;
@@ -39,6 +43,9 @@ public class DriftTrap : NetworkBehaviour
     private bool trapActive = false;
     private float trapActivationTime = 0f;
     private int selectedCheckpointIndex = -1;
+    private float nextReadyTime = 0f;
+
+    private CheckpointCooldownManager checkpointCooldown;
 
     // Ok göstergesi HER client'ta ayrı ayrı tutulur (ClientRpc ile senkronize
     // ediliyor) — networked bir obje değil, sadece görsel bir işaretçi.
@@ -63,6 +70,7 @@ public class DriftTrap : NetworkBehaviour
     void Start()
     {
         checkpointManager = FindAnyObjectByType<CheckpointManager>();
+        checkpointCooldown = FindAnyObjectByType<CheckpointCooldownManager>();
         if (checkpointManager == null)
             Debug.LogWarning("[DriftTrap] CheckpointManager bulunamadı!");
         else if (showDebugLogs)
@@ -114,23 +122,26 @@ public class DriftTrap : NetworkBehaviour
     }
 
     /// <summary>
-    /// Sabotajcı tuzağı aktive eder. GEÇİCİ olarak
-    /// SaboteurSkillInput.CmdActivateTrap() tarafından çağrılıyor (klavye
-    /// C tuşu test girişi). Cooldown kontrolü ileride buraya eklenebilir.
+    /// Sabotajcı tuzağı aktive eder. Başarılıysa true döner. false dönerse
+    /// ya skilin kendi cooldown'u (skillCooldownSeconds) ya da hedef
+    /// checkpoint'in ortak cooldown'u (CheckpointCooldownManager) henüz
+    /// dolmamıştır.
     /// </summary>
     [Server]
-    public void ActivateTrap()
+    public bool ActivateTrap()
     {
         if (selectedCheckpointIndex < 0)
         {
-            if (showDebugLogs) Debug.LogWarning("[DriftTrap] Önce 0-9 ile checkpoint seç!");
-            return;
+            if (showDebugLogs) Debug.LogWarning("[DriftTrap] Önce bir checkpoint seç!");
+            return false;
         }
         if (checkpointManager == null || checkpointManager.checkpoints.Count < 2)
         {
             if (showDebugLogs) Debug.LogWarning("[DriftTrap] Yeterli checkpoint yok.");
-            return;
+            return false;
         }
+        if (Time.time < nextReadyTime) return false;
+        if (checkpointCooldown != null && !checkpointCooldown.IsCheckpointReady(selectedCheckpointIndex)) return false;
 
         trapCheckpointIndex = selectedCheckpointIndex;
         trapActive = true;
@@ -147,6 +158,12 @@ public class DriftTrap : NetworkBehaviour
 
         // KRİTİK: C'ye basıldığı anda zaten bu CP'yi geçmiş (arasında olan) araçları yakala
         CheckCarsCurrentlyBetweenCheckpoints(nextIndex);
+
+        nextReadyTime = Time.time + (checkpointCooldown != null
+            ? checkpointCooldown.ScaleSkillCooldown(skillCooldownSeconds)
+            : skillCooldownSeconds);
+        checkpointCooldown?.StartCooldown(trapCheckpointIndex);
+        return true;
     }
 
     /// <summary>

@@ -17,12 +17,19 @@ using Mirror;
 /// </summary>
 public class ChickenFlockSkill : NetworkBehaviour
 {
+    [Header("Cooldown")]
+    [Tooltip("Tavuk sürüsü ateşlendikten sonra bu skilin tekrar kullanılabilir olması için beklenmesi gereken süre.")]
+    [SerializeField] private float skillCooldownSeconds = 15f;
+
     private ChickenFlockManager flockManager;
+    private CheckpointCooldownManager checkpointCooldown;
     private int selectedCheckpointIndex = -1;
+    private float nextReadyTime = 0f;
 
     void Start()
     {
         flockManager = FindAnyObjectByType<ChickenFlockManager>();
+        checkpointCooldown = FindAnyObjectByType<CheckpointCooldownManager>();
     }
 
     [Server]
@@ -31,11 +38,25 @@ public class ChickenFlockSkill : NetworkBehaviour
         selectedCheckpointIndex = index;
     }
 
+    /// <summary>
+    /// Başarılıysa true döner. false dönerse ya skilin kendi cooldown'u ya
+    /// da hedef checkpoint'in ortak cooldown'u (CheckpointCooldownManager)
+    /// henüz dolmamıştır.
+    /// </summary>
     [Server]
-    public void ActivateSkill()
+    public bool ActivateSkill()
     {
-        if (selectedCheckpointIndex < 0) return;
+        if (selectedCheckpointIndex < 0) return false;
+        if (Time.time < nextReadyTime) return false;
+        if (checkpointCooldown != null && !checkpointCooldown.IsCheckpointReady(selectedCheckpointIndex)) return false;
+
         RpcSpawnFlock(selectedCheckpointIndex);
+
+        nextReadyTime = Time.time + (checkpointCooldown != null
+            ? checkpointCooldown.ScaleSkillCooldown(skillCooldownSeconds)
+            : skillCooldownSeconds);
+        checkpointCooldown?.StartCooldown(selectedCheckpointIndex);
+        return true;
     }
 
     [ClientRpc]

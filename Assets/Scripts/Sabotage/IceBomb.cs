@@ -17,6 +17,16 @@ public class IceBomb : MonoBehaviour
     public float explosionRadius = 3f;
     public float explosionForce = 25000f;
 
+    [Header("Buz Alanı Ömrü")]
+    [Tooltip("Yerdeki buz alanı (icePatchPrefab) patlamadan kaç saniye sonra yok olsun.")]
+    public float icePatchLifetime = 5f;
+
+    [Header("Kamera Sarsıntısı (bomba YERE DÜŞTÜĞÜ an)")]
+    [Tooltip("Bu mesafeden daha uzaktaki kameralar hiç sarsılmaz. Yaklaştıkça sarsıntı artar.")]
+    public float shakeRadius = 40f;
+    [Tooltip("Tam merkezde hissedilecek sarsıntı şiddeti (0-1). 1 = mümkün olan en sert.")]
+    [Range(0f, 1f)] public float shakeStrength = 0.7f;
+
     private Renderer rend;
     private bool flashing = true;
     private bool launched = false;
@@ -60,6 +70,11 @@ public class IceBomb : MonoBehaviour
         }
 
         transform.position = end;
+
+        // ÇARPMA ANI — sarsıntı burada, patlamada değil. Bomba yere değdiği
+        // an hissediliyor; patlama (buz oluşumu) bundan `delay` saniye sonra.
+        ExplosionCameraShake.ShakeAt(end, shakeRadius, shakeStrength);
+
         BeginCountdown();
     }
 
@@ -103,6 +118,7 @@ public class IceBomb : MonoBehaviour
         float s = Random.Range(5f, 10f);
         ice.transform.localScale = Vector3.one * s;
         ice.transform.position = new Vector3(transform.position.x, 0.02f, transform.position.z);
+        Destroy(ice, icePatchLifetime);
 
         // Patlama alanındaki tüm objeleri al
         Collider[] hits = Physics.OverlapSphere(transform.position, explosionRadius);

@@ -144,8 +144,17 @@ public class MyNetworkManager : NetworkManager
     public void PrepareGridForRace(int playerCount)
     {
         maxGridSlots = Mathf.Max(1, playerCount);
+        RacerCount = maxGridSlots;
         ShuffleGrid();
     }
+
+    /// <summary>
+    /// Bu yarıştaki YARIŞÇI sayısı (sabotajcı hariç). Lobiden Online Scene'e
+    /// geçerken PrepareGridForRace ile ayarlanıyor ve NetworkManager
+    /// DontDestroyOnLoad olduğu için sahne geçişinde korunuyor — skiller
+    /// cooldown'larını buna göre ölçekliyor (bkz. CheckpointCooldownManager).
+    /// </summary>
+    public int RacerCount { get; private set; } = 1;
 
     public override void OnClientSceneChanged()
     {

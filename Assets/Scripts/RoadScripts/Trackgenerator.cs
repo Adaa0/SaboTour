@@ -29,6 +29,21 @@ public class TrackGenerator : MonoBehaviour
     [Range(5f, 50f)] public float roadWidth = 25f;
     public float uvTiling = 10f;
 
+    [Header("Kenarlık (Kerb) Ayarları")]
+    [Tooltip("Yolun iki yanına kırmızı-beyaz kabartmalı kenarlık üretilsin mi?")]
+    public bool generateCurbs = true;
+    [Tooltip("Kenarlığın genişliği (metre) — yolun DIŞINA doğru uzuyor, yolu daraltmıyor.")]
+    [Range(0.2f, 5f)] public float curbWidth = 1.5f;
+    [Tooltip("Kenarlığın DIŞ kenarının yoldan ne kadar yüksek olacağı (metre). " +
+             "İç kenar yol seviyesinde kalıyor, yani hafif bir rampa oluşuyor.")]
+    [Range(0f, 1f)] public float curbHeight = 0.12f;
+    [Tooltip("Tek bir kırmızı ya da beyaz bandın uzunluğu (metre).")]
+    public float curbStripeLength = 2f;
+    [Tooltip("Boş bırakılırsa otomatik kırmızı-beyaz çizgili bir materyal üretilir.")]
+    public Material curbMaterial;
+    [Tooltip("Kenarlığa çarpışma yüzeyi eklensin mi? (Araba üstünden geçerken sarsılsın diye.)")]
+    public bool curbCollider = true;
+
     [Header("Merkez Boşluğu (Sabotajcı Kulesi)")]
     [Tooltip("Pist üretildikten sonra dünya merkezine (0,0,0) ortalanır ve yolun merkezden uzak kalması garanti edilir — kule oraya dikilecek.")]
     public bool keepCenterClear = true;
@@ -49,6 +64,7 @@ public class TrackGenerator : MonoBehaviour
     private List<Vector3> _trackPoints;
     private List<Vector2> _refinedPoints;
     private List<GameObject> _checkpoints = new List<GameObject>();
+    private GameObject _curbObject;
 
     void Start()
     {
@@ -86,6 +102,7 @@ public class TrackGenerator : MonoBehaviour
         if (_trackPoints != null && _trackPoints.Count > 2)
         {
             GenerateRoadMesh(_trackPoints);
+            GenerateCurbMesh(_trackPoints);
             GenerateCheckpoints(_trackPoints);
             onTrackGenerated.Invoke();
             Debug.Log($"Track generated with seed: {_seed}. Checkpoints: {checkpointsPerLap}");
@@ -110,6 +127,8 @@ public class TrackGenerator : MonoBehaviour
             mf.sharedMesh = null;
         }
         if (mc != null) mc.sharedMesh = null;
+
+        ClearCurbs();
 
         foreach (var cp in _checkpoints)
         {
@@ -498,16 +517,22 @@ public class TrackGenerator : MonoBehaviour
         }
         _checkpoints.Clear();
 
-        int interval = Mathf.Max(1, trackPoints.Count / checkpointsPerLap);
+        // Nokta İNDEKSİ değil, gerçek YOL UZUNLUĞU (arc length) baz alınıyor.
+        // NEDEN: trackPoints köşelerde (CurveCorners) sık, düz kısımlarda
+        // seyrek — index bazlı eski yöntem checkpoint'lerin virajlara
+        // yığılıp düzlüklerde seyrekleşmesine sebep oluyordu. Artık toplam
+        // pist uzunluğu hesaplanıp checkpointsPerLap'e eşit dilimlere
+        // bölünüyor, her checkpoint kendi hedef mesafesine iki nokta
+        // arasında lineer enterpolasyonla yerleştiriliyor.
+        float totalLength = 0f;
+        for (int i = 0; i < trackPoints.Count; i++)
+            totalLength += Vector3.Distance(trackPoints[i], trackPoints[(i + 1) % trackPoints.Count]);
+
+        float spacing = totalLength / checkpointsPerLap;
 
         for (int i = 0; i < checkpointsPerLap; i++)
         {
-            int pointIndex = i * interval;
-            if (pointIndex >= trackPoints.Count) pointIndex = trackPoints.Count - 1;
-
-            Vector3 pos = trackPoints[pointIndex];
-            Vector3 nextPoint = trackPoints[(pointIndex + 1) % trackPoints.Count];
-            Vector3 forward = (nextPoint - pos).normalized;
+            (Vector3 pos, Vector3 forward) = GetPointAndForwardAtDistance(trackPoints, i * spacing, totalLength);
             Quaternion rotation = Quaternion.LookRotation(forward, Vector3.up);
 
             GameObject cpObject = Instantiate(checkpointPrefab, pos + Vector3.up * 5f, rotation, transform);
@@ -522,6 +547,39 @@ public class TrackGenerator : MonoBehaviour
 
             _checkpoints.Add(cpObject);
         }
+    }
+
+    /// <summary>
+    /// Kapalı pist eğrisi üzerinde, başlangıçtan itibaren verilen mesafedeki
+    /// (targetDistance) noktayı ve o noktadaki ileri yönü döndürür. İki
+    /// örnek nokta arasına düşüyorsa aradaki oranla (Lerp) enterpolasyon
+    /// yapılır, böylece checkpoint tam istenen mesafeye oturur.
+    /// </summary>
+    private (Vector3 pos, Vector3 forward) GetPointAndForwardAtDistance(List<Vector3> points, float targetDistance, float totalLength)
+    {
+        if (totalLength > 0f)
+            targetDistance = Mathf.Repeat(targetDistance, totalLength);
+
+        float accumulated = 0f;
+        for (int i = 0; i < points.Count; i++)
+        {
+            Vector3 curr = points[i];
+            Vector3 next = points[(i + 1) % points.Count];
+            float segLength = Vector3.Distance(curr, next);
+
+            if (accumulated + segLength >= targetDistance)
+            {
+                float t = segLength > 0.0001f ? (targetDistance - accumulated) / segLength : 0f;
+                Vector3 pos = Vector3.Lerp(curr, next, Mathf.Clamp01(t));
+                Vector3 forward = segLength > 0.0001f ? (next - curr).normalized : transform.forward;
+                return (pos, forward);
+            }
+
+            accumulated += segLength;
+        }
+
+        Vector3 fallbackForward = points.Count > 1 ? (points[1] - points[0]).normalized : transform.forward;
+        return (points[0], fallbackForward);
     }
 
     private void GenerateRoadMesh(List<Vector3> points)
@@ -593,6 +651,227 @@ public class TrackGenerator : MonoBehaviour
                 color = new Color(0.2f, 0.2f, 0.2f),
                 enableInstancing = true
             };
+    }
+
+    /// <summary>
+    /// Yolun İKİ YANINA kabartmalı (kırmızı-beyaz) kenarlık üretir.
+    ///
+    /// NEDEN AYRI BİR OBJE: Yol mesh'i bu objenin kendi MeshFilter'ında
+    /// duruyor ve tek bir materyal kullanıyor. Kenarlığın farklı bir
+    /// materyali (çizgili) olması gerektiği için ayrı bir çocuk obje olarak
+    /// üretiliyor.
+    ///
+    /// ŞEKİL: Her nokta için gidiş yönüne dik (perpendicular) bir vektör
+    /// hesaplanıyor — GenerateRoadMesh ile BİREBİR aynı hesap, o yüzden
+    /// kenarlık pistin kıvrımını tam olarak takip ediyor. Yolun kenarından
+    /// (roadWidth/2) başlayıp curbWidth kadar DIŞARI uzanan bir şerit
+    /// geriliyor. İç kenar yol seviyesinde, dış kenar curbHeight kadar
+    /// yukarıda — yani araba üstünden geçerken tırmandığı hafif bir rampa
+    /// oluşuyor (gerçek yarış pistlerindeki kerb gibi).
+    ///
+    /// KIRMIZI-BEYAZ DESEN: Elle blok yerleştirmeye gerek yok. Her noktanın
+    /// pist başından itibaren KÜMÜLATİF MESAFESİ hesaplanıp UV'nin V eksenine
+    /// yazılıyor; materyal bu UV'yi tekrar eden bir dokuyla boyuyor. Pist ne
+    /// kadar rastgele olursa olsun bantlar yol boyunca eşit aralıkta çıkıyor.
+    /// </summary>
+    private void GenerateCurbMesh(List<Vector3> points)
+    {
+        // Önceki kenarlık varsa temizle (yeniden üretimde birikmesin).
+        ClearCurbs();
+
+        if (!generateCurbs || points == null || points.Count < 3) return;
+
+        var curbObject = new GameObject("Track Curbs");
+        curbObject.transform.SetParent(transform, false);
+        _curbObject = curbObject;
+
+        // ÖNEMLİ: Yolla AYNI layer'a koyuyoruz. CarController süspansiyonu
+        // zemini `drivable` layer maskesiyle ışın atarak buluyor — kenarlık
+        // farklı bir layer'da kalırsa araba onu "yol" saymaz ve üstünden
+        // geçerken tekerlekler kenarlığın içine gömülür, kabartma hissi olmaz.
+        curbObject.layer = gameObject.layer;
+
+        var mf = curbObject.AddComponent<MeshFilter>();
+        var mr = curbObject.AddComponent<MeshRenderer>();
+
+        var mesh = new Mesh { name = "Procedural Curb Mesh" };
+        var vertices = new List<Vector3>();
+        var triangles = new List<int>();
+        var uvs = new List<Vector2>();
+
+        float halfRoad = roadWidth * 0.5f;
+
+        // Pistin TOPLAM uzunluğu (halkayı kapatan son segment dahil).
+        float totalLength = 0f;
+        for (int i = 0; i < points.Count; i++)
+            totalLength += Vector3.Distance(points[i], points[(i + 1) % points.Count]);
+
+        // DESENİ HALKAYA TAM OTURT: İstenen bant uzunluğunu olduğu gibi
+        // kullanırsak, pistin toplam uzunluğu bunun tam katı olmadığı için
+        // başlangıç noktasında kırmızı-beyaz dizilim tutmaz. Bant uzunluğunu
+        // en yakın tam sayıda banda bölünecek şekilde milimetrik ayarlıyoruz.
+        int stripeCount = Mathf.Max(1, Mathf.RoundToInt(totalLength / Mathf.Max(0.01f, curbStripeLength)));
+        float fittedStripeLength = totalLength / stripeCount;
+
+        // İki kenarlık üretiyoruz: sol (-1) ve sağ (+1).
+        // Her biri kendi vertex bloğunu alıyor, sonra üçgenlerle bağlanıyor.
+        for (int side = 0; side < 2; side++)
+        {
+            // side 0 = sol, side 1 = sağ. Yön çarpanı ile aynı kodu iki kez
+            // kullanabiliyoruz.
+            float sideSign = (side == 0) ? -1f : 1f;
+            int sideStartIndex = vertices.Count;
+
+            float cumulativeDistance = 0f;
+
+            // DİKKAT: Döngü points.Count'a KADAR DEĞİL, points.Count DAHİL
+            // gidiyor — yani ilk noktanın bir KOPYASI sona ekleniyor.
+            //
+            // NEDEN: Son noktayı doğrudan 0. noktaya bağlarsak, o segmentin
+            // UV değeri koca bir sayıdan aniden 0'a düşer ve doku o tek
+            // parçanın içine yüzlerce kez sıkışır (ekranda sık, ince çizgili
+            // bozuk bir bölge olarak görünür — tam da başlangıç çizgisinde).
+            // Kopya noktanın UV'si "toplam uzunluk" olarak devam ettiği için
+            // böyle bir sıçrama olmuyor.
+            for (int i = 0; i <= points.Count; i++)
+            {
+                int pointIndex = i % points.Count;
+
+                if (i > 0)
+                    cumulativeDistance += Vector3.Distance(points[(i - 1) % points.Count], points[pointIndex]);
+
+                Vector3 curr = points[pointIndex];
+                Vector3 next = points[(pointIndex + 1) % points.Count];
+                Vector3 dir = (next - curr).normalized;
+                Vector3 right = Vector3.Cross(Vector3.up, dir).normalized;
+
+                // İç kenar: yolun tam kenarı, yol seviyesinde.
+                Vector3 inner = curr + right * (sideSign * halfRoad);
+                // Dış kenar: curbWidth kadar dışarıda ve curbHeight kadar yukarıda.
+                Vector3 outer = curr + right * (sideSign * (halfRoad + curbWidth))
+                                     + Vector3.up * curbHeight;
+
+                vertices.Add(inner);
+                vertices.Add(outer);
+
+                // V ekseni = yol boyunca kat edilen mesafe / bant uzunluğu.
+                // Böylece her bantta desen bir kez tekrarlanıyor.
+                float v = cumulativeDistance / fittedStripeLength;
+                uvs.Add(new Vector2(0f, v));
+                uvs.Add(new Vector2(1f, v));
+            }
+
+            // Üçgenler: ardışık iki nokta arasındaki dörtgeni iki üçgene bölüyoruz.
+            // Sonda kopya nokta olduğu için modulo'ya gerek yok.
+            for (int i = 0; i < points.Count; i++)
+            {
+                int baseIndex = sideStartIndex + i * 2;
+                int nextIndex = sideStartIndex + (i + 1) * 2;
+
+                // Sol ve sağ kenarlığın üçgen sarım yönü (winding) TERS olmalı,
+                // yoksa yüzü aşağı bakar ve üstten bakınca görünmez olur
+                // (arka yüzler çizilmiyor — backface culling).
+                //
+                // Nasıl belirlendi: Yol mesh'i her nokta için [sol, sağ]
+                // sırasıyla vertex koyuyor, yani vertex çiftinin yönü +right.
+                // SAĞ kenarlıkta iç→dış yönü de +right olduğu için YOLLA AYNI
+                // sarım doğru. SOL kenarlıkta iç→dış yönü -right, yani ters.
+                if (sideSign > 0f)
+                {
+                    triangles.Add(baseIndex);
+                    triangles.Add(nextIndex);
+                    triangles.Add(baseIndex + 1);
+
+                    triangles.Add(nextIndex);
+                    triangles.Add(nextIndex + 1);
+                    triangles.Add(baseIndex + 1);
+                }
+                else
+                {
+                    triangles.Add(baseIndex);
+                    triangles.Add(baseIndex + 1);
+                    triangles.Add(nextIndex);
+
+                    triangles.Add(nextIndex);
+                    triangles.Add(baseIndex + 1);
+                    triangles.Add(nextIndex + 1);
+                }
+            }
+        }
+
+        mesh.vertices = vertices.ToArray();
+        mesh.triangles = triangles.ToArray();
+        mesh.uv = uvs.ToArray();
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+
+        mf.sharedMesh = mesh;
+        mr.sharedMaterial = curbMaterial != null ? curbMaterial : CreateDefaultCurbMaterial();
+
+        if (curbCollider)
+        {
+            var mc = curbObject.AddComponent<MeshCollider>();
+            mc.sharedMesh = mesh;
+        }
+    }
+
+    /// <summary>
+    /// curbMaterial atanmadıysa kullanılan yedek: kırmızı-beyaz çizgili bir
+    /// doku RUNTIME'DA üretiliyor (dışarıdan bir texture dosyası gerekmesin
+    /// diye). Doku dikey olarak tekrar ettiği için yol boyunca bantlar
+    /// oluşuyor.
+    /// </summary>
+    private Material CreateDefaultCurbMaterial()
+    {
+        const int size = 64;
+        var texture = new Texture2D(size, size) { name = "Curb Stripes" };
+
+        for (int y = 0; y < size; y++)
+        {
+            // Dokunun üst yarısı bir renk, alt yarısı diğeri — UV tekrar
+            // ettikçe kırmızı-beyaz-kırmızı-beyaz diziliyor.
+            Color stripe = (y < size / 2) ? Color.red : Color.white;
+
+            for (int x = 0; x < size; x++)
+                texture.SetPixel(x, y, stripe);
+        }
+
+        texture.filterMode = FilterMode.Point; // bantların arası bulanıklaşmasın
+        texture.wrapMode = TextureWrapMode.Repeat;
+        texture.Apply();
+
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        var material = new Material(shader) { name = "Curb Material (auto)" };
+        material.mainTexture = texture;
+        material.enableInstancing = true;
+
+        return material;
+    }
+
+    /// <summary>Üretilmiş kenarlık objesini (varsa) siler.</summary>
+    private void ClearCurbs()
+    {
+        if (_curbObject == null)
+        {
+            // Sahne yeniden yüklendiğinde referans kaybolmuş olabilir —
+            // isme göre de arayıp temizliyoruz ki kopyalar birikmesin.
+            Transform existing = transform.Find("Track Curbs");
+            if (existing != null) _curbObject = existing.gameObject;
+        }
+
+        if (_curbObject == null) return;
+
+        var mf = _curbObject.GetComponent<MeshFilter>();
+        if (mf != null && mf.sharedMesh != null)
+        {
+            if (Application.isPlaying) Destroy(mf.sharedMesh);
+            else DestroyImmediate(mf.sharedMesh);
+        }
+
+        if (Application.isPlaying) Destroy(_curbObject);
+        else DestroyImmediate(_curbObject);
+
+        _curbObject = null;
     }
 
     private List<Vector2> GetConvexHull(List<Vector2> points)

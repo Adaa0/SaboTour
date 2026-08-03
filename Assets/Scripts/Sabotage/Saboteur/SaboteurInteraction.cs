@@ -39,6 +39,11 @@ public class SaboteurInteraction : NetworkBehaviour
     // asıl değer server tarafında her skilin kendi içinde duruyor.
     private int selectedCheckpoint = -1;
 
+    // Şu an minimap'te yeşille vurgulanan marker — yeni bir checkpoint
+    // seçildiğinde bunun rengi geri (mora) alınıyor. Tamamen LOCAL/görsel,
+    // network'e gitmiyor (MinimapController zaten local bir sistem).
+    private MinimapCheckpointMarker selectedMarker;
+
     private SaboteurController saboteurController;
 
     void Awake()
@@ -75,6 +80,11 @@ public class SaboteurInteraction : NetworkBehaviour
         {
             selectedCheckpoint = marker.checkpointIndex;
             GetFeedback(hitCollider).PlayPress();
+
+            if (selectedMarker != null) selectedMarker.SetSelected(false);
+            selectedMarker = marker;
+            selectedMarker.SetSelected(true);
+
             if (showDebugLogs) Debug.Log($"[SaboteurInteraction] Checkpoint seçildi: {selectedCheckpoint}");
             CmdSelectCheckpoint(marker.checkpointIndex);
             return;
@@ -152,32 +162,39 @@ public class SaboteurInteraction : NetworkBehaviour
     [Command]
     private void CmdActivateSkill(SkillType skill)
     {
+        // Her skil metodu artık bool dönüyor — false ise ya skilin KENDİ
+        // cooldown'u (skillCooldownSeconds) ya da hedef checkpoint'in ortak
+        // cooldown'u (CheckpointCooldownManager) henüz dolmamış demektir.
+        bool success;
+
         switch (skill)
         {
             case SkillType.IceBomb:
             {
                 IceBombSkill s = FindAnyObjectByType<IceBombSkill>();
                 if (s == null) { TargetLog("HATA: IceBombSkill sahnede bulunamadı!"); return; }
-                s.ActivateSkill();
+                success = s.ActivateSkill();
                 break;
             }
             case SkillType.ChickenFlock:
             {
                 ChickenFlockSkill s = FindAnyObjectByType<ChickenFlockSkill>();
                 if (s == null) { TargetLog("HATA: ChickenFlockSkill sahnede bulunamadı!"); return; }
-                s.ActivateSkill();
+                success = s.ActivateSkill();
                 break;
             }
             case SkillType.DriftTrap:
             {
                 DriftTrap s = FindAnyObjectByType<DriftTrap>();
                 if (s == null) { TargetLog("HATA: DriftTrap sahnede bulunamadı!"); return; }
-                s.ActivateTrap();
+                success = s.ActivateTrap();
                 break;
             }
+            default:
+                return;
         }
 
-        TargetLog($"{skill} AKTİF!");
+        TargetLog(success ? $"{skill} AKTİF!" : $"{skill} henüz hazır değil (cooldown'da).");
     }
 
     /// <summary>

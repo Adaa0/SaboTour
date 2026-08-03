@@ -190,6 +190,21 @@ public class MinimapController : MonoBehaviour
         isBuilt = true;
     }
 
+    /// <summary>
+    /// CheckpointCooldownManager server'da bir checkpoint'in cooldown'a
+    /// girdiğini ClientRpc ile bildirdiğinde çağrılır. checkpointIndex,
+    /// spawnedMarkers listesindeki sırayla birebir eşleşiyor (BuildCheckpointMarkers
+    /// checkpoint'leri sırayla, index'leriyle aynı sırada oluşturuyor).
+    /// </summary>
+    public void PlayCheckpointCooldownVisual(int checkpointIndex, float duration)
+    {
+        if (checkpointIndex < 0 || checkpointIndex >= spawnedMarkers.Count) return;
+        if (spawnedMarkers[checkpointIndex] == null) return;
+
+        MinimapCheckpointMarker marker = spawnedMarkers[checkpointIndex].GetComponent<MinimapCheckpointMarker>();
+        marker?.PlayCooldown(duration);
+    }
+
     private List<Vector3> CheckpointPositions()
     {
         List<Vector3> positions = new List<Vector3>();
@@ -365,7 +380,12 @@ public class MinimapController : MonoBehaviour
         GameObject markerObj = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         markerObj.name = $"CheckpointMarker_{index}";
         markerObj.transform.localScale = Vector3.one * markerRadius;
-        markerObj.GetComponent<Renderer>().material = MakeUnlitMaterial(Color.red);
+        // Rengi burada sabitlemiyoruz — MinimapCheckpointMarker kendi
+        // Awake()'inde varsayılan (yeşil = hazır) rengi uyguluyor ve
+        // seçim/cooldown durumuna göre yönetiyor. Burada sadece unlit bir
+        // materyal olması yeterli (shader property'leri MinimapCheckpointMarker'ın
+        // beklediğiyle uyumlu olsun diye).
+        markerObj.GetComponent<Renderer>().material = MakeUnlitMaterial(Color.white);
 
         if (!showCheckpointNumbers) return markerObj;
 

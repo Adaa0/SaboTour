@@ -114,3 +114,6 @@ MonoBehaviour:
   flashSpeed: 0.15
   explosionRadius: 200
   explosionForce: 50000
+  icePatchLifetime: 5
+  shakeRadius: 200
+  shakeStrength: 1
