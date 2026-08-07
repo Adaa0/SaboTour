@@ -1,6 +1,7 @@
 using UnityEngine;
 using Mirror;
 using System.Linq;
+using System.Collections.Generic;
 
 /// <summary>
 /// Lobide (Offline Scene, herkes bağlanıp hazır olana kadar burada bekler)
@@ -94,11 +95,28 @@ public class LobbyPlayer : NetworkBehaviour
 
         int racerCount = saboteurIndex >= 0 ? players.Count - 1 : players.Count;
 
+        // RENK ATAMA: 12 renklik paletten (CarController.ColorPalette),
+        // oyuncu sayısı kadarını karıştırıp birer birer dağıtıyoruz — kimse
+        // aynısını almasın diye. Sabotajcıya da bir renk düşüyor ama arabası
+        // olmadığı için şu an kullanılmıyor (ileride kendi rengini
+        // seçtiğinde bu atama zaten görmezden gelinecek).
+        List<int> shuffledColors = Enumerable.Range(0, CarController.ColorPalette.Length).ToList();
+        for (int i = shuffledColors.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            (shuffledColors[i], shuffledColors[j]) = (shuffledColors[j], shuffledColors[i]);
+        }
+
+        var colorMap = new System.Collections.Generic.Dictionary<NetworkConnectionToClient, int>();
+        for (int i = 0; i < players.Count; i++)
+            colorMap[players[i].connectionToClient] = shuffledColors[i % shuffledColors.Count];
+
         MyNetworkManager netManager = NetworkManager.singleton as MyNetworkManager;
         if (netManager != null)
         {
             netManager.PrepareGridForRace(racerCount);
             netManager.SetRoleAssignments(roleMap);
+            netManager.SetColorAssignments(colorMap);
         }
 
         RpcShowLoadingScreen();

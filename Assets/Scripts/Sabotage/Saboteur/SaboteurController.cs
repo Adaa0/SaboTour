@@ -128,9 +128,23 @@ public class SaboteurController : NetworkBehaviour
             CreateCrosshair();
     }
 
+    // Yarış bitip podyum sahnesine geçilince true olur — kontrol tamamen
+    // durur (RacePodiumManager tarafından FreezeForRaceEnd ile ayarlanır).
+    private bool raceEndedFrozen = false;
+
     void Update()
     {
         if (!isOwned) return;
+
+        if (raceEndedFrozen)
+        {
+            // Podyum spawn noktası kolonun biraz üstünde — yerçekimi hâlâ
+            // uygulanmazsa sabotajcı havada asılı kalır. Yürüme/bakış/skil
+            // tamamen kapalı ama düşüp kolonun üstüne oturması için gravity
+            // çalışmaya devam ediyor (ESC ile duraklatmadaki ile aynı metod).
+            ApplyGravityOnly();
+            return;
+        }
 
         HandleCursorToggle();
         HandleSensitivityAdjustment();
@@ -369,6 +383,56 @@ public class SaboteurController : NetworkBehaviour
         rect.anchoredPosition = Vector2.zero;
         rect.sizeDelta = size;
     }
+
+    #region Yarış Sonu / Podyum
+
+    /// <summary>
+    /// RacePodiumManager, YARIŞ BİTTİĞİNDE sabotajcıyı podyum kolonundaki
+    /// spawn noktasına ışınlamak için çağırır. CharacterController
+    /// aktifken transform.position'ı doğrudan değiştirmek işe yaramıyor
+    /// (fizik motoru üzerine yazıyor) — bu yüzden geçici olarak kapatılıp
+    /// pozisyon/rotasyon ayarlandıktan sonra tekrar açılıyor.
+    /// </summary>
+    public void TeleportTo(Vector3 position, Quaternion rotation)
+    {
+        if (!isOwned) return;
+
+        controller.enabled = false;
+        transform.SetPositionAndRotation(position, rotation);
+        currentYaw = targetYaw = rotation.eulerAngles.y;
+        currentPitch = targetPitch = 0f;
+        verticalVelocity = 0f;
+        controller.enabled = true;
+    }
+
+    /// <summary>
+    /// Podyuma ışınlandıktan sonra hareketi/imleç kilidini tamamen kapatır.
+    /// Kamera kapatmayı AYRI tutuyoruz (HideCameraForPodium) çünkü racers
+    /// kazandığında sabotajcı ışınlanmaz ama kamerası yine de podyum
+    /// görünümüne geçmeli.
+    /// </summary>
+    public void FreezeForRaceEnd()
+    {
+        raceEndedFrozen = true;
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+        if (crosshairRoot != null)
+            crosshairRoot.SetActive(false);
+    }
+
+    /// <summary>
+    /// RacePodiumManager, podyum kamerasına geçerken sabotajcının kendi
+    /// FPCam'ini kapatmak için çağırır (yarışçılar kazandığında bile,
+    /// sabotajcı da podyum töreni kamerasından izlesin diye).
+    /// </summary>
+    public void HideCameraForPodium()
+    {
+        if (fpCam != null)
+            fpCam.SetActive(false);
+    }
+
+    #endregion
 
     /// <summary>Karakter yok olurken nişangahı ve hassasiyet yazısını da temizle (sahne değişimi vb.).</summary>
     void OnDestroy()

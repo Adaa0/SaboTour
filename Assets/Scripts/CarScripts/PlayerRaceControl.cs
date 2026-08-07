@@ -74,6 +74,15 @@ public class PlayerRaceController : NetworkBehaviour
     // spawn/despawn edilen networked objede (owner olsun olmasın) çağrılır.
     public static readonly System.Collections.Generic.List<PlayerRaceController> AllPlayers = new();
 
+    /// <summary>
+    /// Server'da bir yarışçı turlarını bitirdiğinde tetiklenir (ServerFinishRace
+    /// içinde). RacePodiumManager bunu dinleyip "yarışçılar kazandı" podyum
+    /// akışını başlatıyor. Sadece SERVER tarafında çalışan kod bu event'i
+    /// tetikler (ServerFinishRace zaten [Server] guard'lı), yani bu event
+    /// sadece server sürecinde (host ya da dedicated server) ateşlenir.
+    /// </summary>
+    public static event System.Action<PlayerRaceController> OnPlayerFinishedRace;
+
     public override void OnStartClient()
     {
         base.OnStartClient();
@@ -202,6 +211,21 @@ public class PlayerRaceController : NetworkBehaviour
         isRacingSynced = false;
         timerRunning = false;
         TargetRaceFinished();
+        OnPlayerFinishedRace?.Invoke(this);
+    }
+
+    /// <summary>
+    /// Sabotajcı süre dolarak kazandığında, RacePodiumManager hâlâ yarışan
+    /// (bitirmemiş) yarışçıları durdurmak için bunu çağırır — böylece
+    /// checkpoint/timer işlemeye devam etmezler. Normal bitiriş (ServerFinishRace)
+    /// ile karıştırılmasın diye ayrı: burada "FINISHED!" yazısı gösterilmiyor,
+    /// çünkü yarışçı gerçekten bitirmedi, sadece süre doldu.
+    /// </summary>
+    [Server]
+    public void ServerStopForRaceEnd()
+    {
+        isRacingSynced = false;
+        timerRunning = false;
     }
 
     /// <summary>Server -> sadece bu aracın sahibi. Tur bitti bildirimi.</summary>

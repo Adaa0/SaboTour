@@ -3,7 +3,42 @@ guid: 7d41fd26ed6776c4699721857e3b509c
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: button_red
+    second: {fileID: 2100000, guid: b8ea407e2f2c2c747b59bbda8a0f7ebb, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: button_red_dark
+    second: {fileID: 2100000, guid: bca4d3fa181740644a323adaac674b79, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: hazard_yellow
+    second: {fileID: 2100000, guid: 26edb40e80be1b94298a851192be0a5b, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: metal_dark
+    second: {fileID: 2100000, guid: 2a41afcaeb4e0b94ab9dcbb138e2d3a5, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: metal_mid
+    second: {fileID: 2100000, guid: 9ea8b40bed0dea943b7af0f470e06923, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: wood_dark
+    second: {fileID: 2100000, guid: fb901fe7c10cec648a82688b29bac3de, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: wood_light
+    second: {fileID: 2100000, guid: 5dca72fb0834fef46a1bec795c99c206, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0

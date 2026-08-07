@@ -4,7 +4,9 @@ using System.Linq;
 using UnityEngine.Events;
 
 #if UNITY_EDITOR
+using System.IO;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 #endif
 
 [ExecuteInEditMode]
@@ -16,6 +18,17 @@ public class TrackGenerator : MonoBehaviour
     public Vector2 xBounds = new Vector2(-150, 150);
     public Vector2 yBounds = new Vector2(-150, 150);
     public bool generateOnStart = false;
+
+    [Tooltip("GEÇİCİ ÇEKİM AYARI — sadece fotoğraf sahnesi için, gerçek oyunda " +
+             "KAPALI kalmalı.\n\n" +
+             "Açıkken, Play'e basıldığında pist rastgele DEĞİL, aşağıdaki 'Debug " +
+             "Info > Seed' değeriyle yeniden üretilir. Yani editörde beğenip " +
+             "sabitlediğin pistin BİREBİR AYNISI oluşur.\n\n" +
+             "NEDEN GEREKLİ: Yol noktalarının listesi (GetTrackPoints) sahneye " +
+             "kaydedilmiyor, sadece çalışma anında var oluyor. Mesh'i bake etsen " +
+             "bile Play'e basınca o liste boş olur ve minimap yolu çizemez. Bu " +
+             "seçenek listeyi aynı seed'le yeniden doldurup sorunu çözüyor.")]
+    public bool useSavedSeedOnStart = false;
 
     [Header("F1-Style Generation Settings")]
     [Range(1, 10)] public int trackComplexity = 6;
@@ -68,7 +81,17 @@ public class TrackGenerator : MonoBehaviour
 
     void Start()
     {
-        if (generateOnStart && Application.isPlaying)
+        if (!Application.isPlaying) return;
+
+        // GEÇİCİ ÇEKİM YOLU: kayıtlı seed ile üret → editörde sabitlediğin
+        // pistin aynısı çıkar, ama yol noktası listesi de dolar (minimap için).
+        if (useSavedSeedOnStart)
+        {
+            GenerateTrackWithSeed(_seed);
+            return;
+        }
+
+        if (generateOnStart)
             GenerateTrack();
     }
 
@@ -845,6 +868,16 @@ public class TrackGenerator : MonoBehaviour
         material.mainTexture = texture;
         material.enableInstancing = true;
 
+        // ÖNEMLİ: URP/Lit'in varsayılan Smoothness'i 0.5, yani yarı parlak.
+        // Kenarlığın dış kenarı yükseltilmiş olduğu için (curbHeight) orada
+        // eğimli bir yüzey var; alçak güneş o eğime yalayarak vurduğunda güçlü
+        // bir parlama (specular) çıkıyor ve beyaz bantlar ışığın rengini alıp
+        // turuncuya kayarak deseni yok ediyordu. Boyalı beton mat bir yüzey —
+        // parlaklığı kısıyoruz.
+        if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.1f);
+        if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0.1f); // Standard shader yedeği
+        if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+
         return material;
     }
 
@@ -945,6 +978,9 @@ public class TrackGenerator : MonoBehaviour
 [CustomEditor(typeof(TrackGenerator))]
 public class TrackGeneratorEditor : Editor
 {
+    /// <summary>Inspector'daki elle yazılabilir seed kutusunun değeri.</summary>
+    private int _seedField;
+
     public override void OnInspectorGUI()
     {
         DrawDefaultInspector();
@@ -954,10 +990,6 @@ public class TrackGeneratorEditor : Editor
         GUILayout.Space(10);
         GUILayout.Label("Track Controls", EditorStyles.boldLabel);
 
-        GUI.enabled = false;
-        EditorGUILayout.IntField("Current Seed", tg.seed);
-        GUI.enabled = true;
-
         EditorGUILayout.PropertyField(serializedObject.FindProperty("checkpointPrefab"));
         serializedObject.ApplyModifiedProperties();
 
@@ -965,17 +997,50 @@ public class TrackGeneratorEditor : Editor
         if (GUILayout.Button("Generate Track"))
         {
             tg.GenerateTrack();
-            EditorUtility.SetDirty(tg);
-            SceneView.RepaintAll();
+            _seedField = tg.seed;
+            MarkDirty(tg);
         }
 
         if (GUILayout.Button("Clear Track"))
         {
             tg.ClearTrack();
-            EditorUtility.SetDirty(tg);
-            SceneView.RepaintAll();
+            MarkDirty(tg);
         }
         GUILayout.EndHorizontal();
+
+        // ─────────────────────────────────────────────────────────────────
+        // FOTOĞRAF / CAPSULE SAHNESİ ARAÇLARI
+        // Pist prosedürel üretildiği için normalde sadece Play modunda var
+        // oluyor ve her seferinde değişiyor. Aşağıdaki araçlar belirli bir
+        // pisti sabitleyip sahneye kalıcı olarak gömmeyi sağlıyor.
+        // ─────────────────────────────────────────────────────────────────
+        GUILayout.Space(12);
+        GUILayout.Label("Fotoğraf Sahnesi Araçları", EditorStyles.boldLabel);
+
+        EditorGUILayout.HelpBox(
+            "Beğendiğin pisti bulunca Seed değerini not et — aynı seed her zaman " +
+            "aynı pisti üretir, yani o pisti bir daha kaybetmezsin.",
+            MessageType.Info);
+
+        GUILayout.BeginHorizontal();
+        _seedField = EditorGUILayout.IntField("Seed", _seedField);
+        if (GUILayout.Button("Bu Seed ile Üret", GUILayout.Width(150)))
+        {
+            tg.GenerateTrackWithSeed(_seedField);
+            MarkDirty(tg);
+        }
+        GUILayout.EndHorizontal();
+
+        if (GUILayout.Button("Şu Anki Seed'i Kutuya Al"))
+            _seedField = tg.seed;
+
+        GUILayout.Space(6);
+
+        if (GUILayout.Button("Propları Serpiştir (ağaç / kaya)"))
+            ScatterProps(tg);
+
+        if (GUILayout.Button("Mesh'leri Asset Olarak Kaydet (sahneye kalıcı göm)"))
+            BakeMeshes(tg);
 
         EditorGUILayout.HelpBox(
             "1. Create a Checkpoint prefab with Trigger Collider and Checkpoint.cs\n" +
@@ -983,6 +1048,101 @@ public class TrackGeneratorEditor : Editor
             "3. Ensure cars have 'Player' tag and PlayerRaceController.cs",
             MessageType.Info
         );
+    }
+
+    /// <summary>
+    /// TrackPropScatter'ı bulup Scatter() çağırır. Scatter() kendi
+    /// TrackGenerator referansını çözebildiği için editörden çağrılabiliyor.
+    /// </summary>
+    private static void ScatterProps(TrackGenerator tg)
+    {
+        TrackPropScatter scatter = tg.GetComponent<TrackPropScatter>();
+        if (scatter == null)
+            scatter = Object.FindAnyObjectByType<TrackPropScatter>();
+
+        if (scatter == null)
+        {
+            Debug.LogWarning(
+                "[TrackGeneratorEditor] Sahnede TrackPropScatter yok. TrackGenerator'ın " +
+                "olduğu objeye TrackPropScatter ekle ve propPrefabs listesini doldur.");
+            return;
+        }
+
+        scatter.Scatter();
+        MarkDirty(scatter);
+    }
+
+    /// <summary>
+    /// Üretilen yol/kenarlık mesh'lerini gerçek .asset dosyalarına çevirir.
+    ///
+    /// NEDEN GEREKLİ: Kod içinde "new Mesh()" ile üretilen mesh diske ait
+    /// değildir. Sahneyi kaydedip Unity'yi kapatıp açtığında bu mesh'in
+    /// kaybolma riski var (yol ve kenarlık görünmez olur). Bu buton kalıcı bir
+    /// kopya yazıp MeshFilter ile MeshCollider'ı ona bağlıyor — pist artık
+    /// sahnenin sabit parçası, tıpkı elle modellenmiş gibi.
+    /// </summary>
+    private static void BakeMeshes(TrackGenerator tg)
+    {
+        const string bakeFolder = "Assets/GeneratedTracks";
+
+        if (!Directory.Exists(bakeFolder))
+        {
+            Directory.CreateDirectory(bakeFolder);
+            AssetDatabase.Refresh();
+        }
+
+        string sceneName = tg.gameObject.scene.name;
+        if (string.IsNullOrEmpty(sceneName)) sceneName = "Scene";
+
+        int baked = 0;
+
+        foreach (MeshFilter filter in tg.GetComponentsInChildren<MeshFilter>(true))
+        {
+            Mesh mesh = filter.sharedMesh;
+            if (mesh == null) continue;
+
+            // Zaten diske kayıtlıysa (butona ikinci kez basıldıysa) atla.
+            if (!string.IsNullOrEmpty(AssetDatabase.GetAssetPath(mesh))) continue;
+
+            Mesh copy = Object.Instantiate(mesh);
+            copy.name = $"{sceneName}_{tg.seed}_{filter.gameObject.name}";
+
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{bakeFolder}/{copy.name}.asset");
+            AssetDatabase.CreateAsset(copy, path);
+
+            filter.sharedMesh = copy;
+
+            // Yolun MeshCollider'ı da aynı mesh'i kullanıyor — o da bağlanmalı,
+            // yoksa arabalar görünmeyen eski mesh üzerinde sürer.
+            MeshCollider collider = filter.GetComponent<MeshCollider>();
+            if (collider != null) collider.sharedMesh = copy;
+
+            baked++;
+        }
+
+        AssetDatabase.SaveAssets();
+        MarkDirty(tg);
+
+        Debug.Log(baked > 0
+            ? $"[TrackGeneratorEditor] {baked} mesh '{bakeFolder}' altına kaydedildi. Şimdi Ctrl+S ile sahneyi de kaydet."
+            : "[TrackGeneratorEditor] Kaydedilecek yeni mesh yok (hepsi zaten asset olabilir ya da pist üretilmemiş olabilir).");
+    }
+
+    /// <summary>
+    /// Unity'ye "bu sahnede kaydedilmemiş değişiklik var" der. SADECE
+    /// SetDirty yeterli değil — sahne dirty işaretlenmezse Ctrl+S hiçbir şey
+    /// kaydetmeyebilir ve yaptığın iş kaybolur.
+    /// </summary>
+    private static void MarkDirty(Component component)
+    {
+        if (component == null) return;
+
+        EditorUtility.SetDirty(component);
+
+        if (!Application.isPlaying)
+            EditorSceneManager.MarkSceneDirty(component.gameObject.scene);
+
+        SceneView.RepaintAll();
     }
 }
 #endif

@@ -33,6 +33,19 @@ public class CarCameraActivator : NetworkBehaviour
     [SerializeField] private GameObject carCam;
 
     /// <summary>
+    /// Fotoğraf sahnesi için: ağ oturumu yokken OnStartAuthority() hiç
+    /// çağrılmadığı için kamera kapalı kalıyordu. CarController'daki
+    /// "Photo Studio Mode" kutusu açıksa kamerayı burada elle açıyoruz.
+    /// </summary>
+    private void Start()
+    {
+        CarController controller = GetComponent<CarController>();
+
+        if (controller != null && controller.PhotoStudioMode && carCam != null)
+            carCam.SetActive(true);
+    }
+
+    /// <summary>
     /// Mirror callback — SADECE bu arabanın sahibi olan client'ta,
     /// yetki verildiği anda bir kere çağrılır.
     /// </summary>
@@ -48,5 +61,16 @@ public class CarCameraActivator : NetworkBehaviour
         {
             Debug.LogWarning("[CarCameraActivator] carCam atanmamış! Inspector'dan CarCam objesini sürükle.");
         }
+    }
+
+    /// <summary>
+    /// RacePodiumManager, yarış bitip podyum kamerasına geçerken bu arabanın
+    /// normal takip kamerasını kapatmak için çağırır (CarCam'ın referansı
+    /// zaten burada tutulduğu için bu iş bu script'e ait).
+    /// </summary>
+    public void SetCarCamActive(bool active)
+    {
+        if (carCam != null)
+            carCam.SetActive(active);
     }
 }

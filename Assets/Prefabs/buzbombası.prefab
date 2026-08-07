@@ -106,14 +106,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 98ec7c6ca07b4054a82debb2ae0a3506, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IceBomb
-  delay: 1.5
+  delay: 2
   icePatchPrefab: {fileID: 8092128558806959148, guid: 2e11e06190e6c1a43b575f259f318a93, type: 3}
   flashTargetRenderer: {fileID: 2591278487575538454}
   normalMat: {fileID: 2100000, guid: 1ec3428faa719074ab5c7111712fd211, type: 2}
   flashMat: {fileID: 2100000, guid: d63a420a5ed8e2e48bc798fd20ecdd2d, type: 2}
   flashSpeed: 0.15
   explosionRadius: 200
-  explosionForce: 50000
+  explosionForce: 30000
   icePatchLifetime: 5
   shakeRadius: 200
   shakeStrength: 1

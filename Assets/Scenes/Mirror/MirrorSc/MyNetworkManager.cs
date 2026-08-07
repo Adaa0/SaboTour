@@ -32,6 +32,16 @@ public class MyNetworkManager : NetworkManager
         roleAssignments = assignments;
     }
 
+    // LobbyPlayer.ServerCheckAllReady() ile aynı anda doldurulur — hangi
+    // bağlantının hangi araba rengini (CarController.ColorPalette indeksi)
+    // aldığı bilgisi. Araba spawn olurken bu haritadan okunup uygulanıyor.
+    private Dictionary<NetworkConnectionToClient, int> colorAssignments = new();
+
+    public void SetColorAssignments(Dictionary<NetworkConnectionToClient, int> assignments)
+    {
+        colorAssignments = assignments;
+    }
+
     [Header("Yarış Izgarası (F1 Dizilişi)")]
     [Tooltip("Aynı anda kaç araç için ızgara slotu ayrılacak.")]
     [SerializeField] private int maxGridSlots = 4;
@@ -195,6 +205,16 @@ public class MyNetworkManager : NetworkManager
         }
 
         GameObject player = Instantiate(playerPrefab, spawnPos, spawnRot);
+
+        // Renk ataması varsa uygula — AddPlayerForConnection'dan ÖNCE, böylece
+        // ilk network spawn paketiyle birlikte doğru renk gidiyor, client'larda
+        // "önce beyaz sonra renkli" gibi bir sıçrama olmuyor.
+        if (colorAssignments.TryGetValue(conn, out int colorIndex) &&
+            player.TryGetComponent(out CarController carController))
+        {
+            carController.SetColorIndex(colorIndex);
+        }
+
         NetworkServer.AddPlayerForConnection(conn, player);
     }
 

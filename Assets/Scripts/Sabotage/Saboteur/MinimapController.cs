@@ -85,6 +85,10 @@ public class MinimapController : MonoBehaviour
     [Header("Görünüm")]
     [Tooltip("Minimap zemininin materyali. Boş bırakılırsa düz siyah kullanılır.")]
     [SerializeField] private Material backgroundMaterial;
+    [Tooltip("ZORUNLU (build'de çalışması için) — Unlit/basit bir materyal ata (ör. Universal Render Pipeline/Unlit shader'lı boş bir materyal). " +
+             "Kod, checkpoint/kenarlık/zemin/araba materyallerini bunun bir kopyası üzerinden üretir. Boş bırakılırsa eski Shader.Find() yöntemine " +
+             "geri düşer — bu, Editor'de çalışır ama BUILD'de shader'ın stripelenip kaybolma riski taşır (yaşanan bug tam buydu).")]
+    [SerializeField] private Material unlitBaseMaterial;
 
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = true;
@@ -497,7 +501,7 @@ public class MinimapController : MonoBehaviour
     /// Kırmızı-beyaz çizgili unlit materyal — minimap'in diğer parçaları gibi
     /// ışıktan etkilenmiyor ki masanın üstünde her açıdan aynı okunsun.
     /// </summary>
-    private static Material MakeCurbStripeMaterial()
+    private Material MakeCurbStripeMaterial()
     {
         const int size = 32;
         var texture = new Texture2D(size, size) { name = "MinimapCurbStripes" };
@@ -636,17 +640,27 @@ public class MinimapController : MonoBehaviour
     {
         GameObject markerObj;
 
+        // Marker'a AYRI bir CarController eklemek yerine, oyuncunun gerçek
+        // arabasındaki (zaten SyncVar ile senkronize edilmiş) rengi doğrudan
+        // okuyoruz — marker'ın kendi network/component'ine ihtiyacı yok.
+        Color markerColor = new Color(0.2f, 0.6f, 1f); // renk bulunamazsa varsayılan
+        CarController carController = player.GetComponent<CarController>();
+        if (carController != null && carController.ColorIndex >= 0 && carController.ColorIndex < CarController.ColorPalette.Length)
+            markerColor = CarController.ColorPalette[carController.ColorIndex];
+
         if (carMarkerPrefab != null)
         {
             // Prefabın KENDİ scale'i aynen korunuyor — kod ölçeklemiyor,
-            // boyutu prefab üzerinden ayarlıyorsun.
+            // boyutu prefab üzerinden ayarlıyorsun. Renk, gerçek arabadaki
+            // gibi SADECE "CarBody" isimli materyal slotuna uygulanıyor.
             markerObj = Instantiate(carMarkerPrefab, mapRoot);
+            ApplyColorToCarBodySlots(markerObj, markerColor);
         }
         else
         {
             markerObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
             Destroy(markerObj.GetComponent<Collider>()); // arabaya tıklanmasın
-            markerObj.GetComponent<Renderer>().material = MakeUnlitMaterial(new Color(0.2f, 0.6f, 1f));
+            markerObj.GetComponent<Renderer>().material = MakeUnlitMaterial(markerColor);
             // Arabanın hangi yöne baktığı belli olsun diye ileri doğru uzun bir kutu
             markerObj.transform.localScale = new Vector3(0.6f, 0.4f, 1f) * carMarkerScale;
         }
@@ -657,16 +671,58 @@ public class MinimapController : MonoBehaviour
         return markerObj;
     }
 
-    private static Material MakeUnlitMaterial(Color color)
+    /// <summary>
+    /// CarController.ApplyCarColor() ile AYNI mantık: bir objenin (ve
+    /// çocuklarının) TÜM Renderer'larını tarar, sadece ismi "CarBody" içeren
+    /// materyal slotuna renk uygular — aynı Renderer'daki başka bir materyal
+    /// (ör. colormap) etkilenmez.
+    /// </summary>
+    private static void ApplyColorToCarBodySlots(GameObject root, Color color)
     {
-        if (cachedUnlitShader == null)
+        MaterialPropertyBlock block = null;
+
+        foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>())
         {
-            cachedUnlitShader = Shader.Find("Universal Render Pipeline/Unlit");
-            if (cachedUnlitShader == null) cachedUnlitShader = Shader.Find("Unlit/Color");
-            if (cachedUnlitShader == null) cachedUnlitShader = Shader.Find("Standard");
+            Material[] materials = renderer.sharedMaterials;
+            for (int slot = 0; slot < materials.Length; slot++)
+            {
+                Material mat = materials[slot];
+                if (mat == null) continue;
+                if (mat.name.IndexOf("CarBody", System.StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                block ??= new MaterialPropertyBlock();
+                renderer.GetPropertyBlock(block, slot);
+                block.SetColor("_BaseColor", color);
+                block.SetColor("_Color", color);
+                renderer.SetPropertyBlock(block, slot);
+            }
+        }
+    }
+
+    private Material MakeUnlitMaterial(Color color)
+    {
+        Material mat;
+
+        // Inspector'dan gerçek bir materyal atandıysa ONUN bir kopyası kullanılıyor —
+        // bu, build'de asla stripelenmez (script alanına sürüklenmiş asset'ler
+        // Unity tarafından garanti dahil edilir). Shader.Find() ise sadece
+        // Editor'de güvenilir, build'de shader stripping'e takılabiliyor.
+        if (unlitBaseMaterial != null)
+        {
+            mat = new Material(unlitBaseMaterial);
+        }
+        else
+        {
+            if (cachedUnlitShader == null)
+            {
+                cachedUnlitShader = Shader.Find("Universal Render Pipeline/Unlit");
+                if (cachedUnlitShader == null) cachedUnlitShader = Shader.Find("Unlit/Color");
+                if (cachedUnlitShader == null) cachedUnlitShader = Shader.Find("Standard");
+            }
+            mat = new Material(cachedUnlitShader);
         }
 
-        Material mat = new Material(cachedUnlitShader);
         if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
         if (mat.HasProperty("_Color")) mat.SetColor("_Color", color);
         return mat;

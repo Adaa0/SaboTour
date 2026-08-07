@@ -60,6 +60,68 @@ public class TrackPropScatterEditor : Editor
             scatter.ClearAllProps();
             MarkDirty(scatter);
         }
+
+        EditorGUILayout.Space(10);
+        EditorGUILayout.LabelField("Performans", EditorStyles.boldLabel);
+
+        EditorGUILayout.HelpBox(
+            "GPU Instancing, aynı modelden yüzlerce kopyayı TEK çizim çağrısında " +
+            "çizer — binlerce ağaç için doğru araç budur.\n\n" +
+            "ŞARTI: URP Asset'te SRP Batcher KAPALI olmalı ve bu scatter'da " +
+            "'Use Static Batching' KAPALI olmalı. Üçü aynı anda çalışmıyor, " +
+            "biri diğerlerini devre dışı bırakıyor.",
+            MessageType.Info);
+
+        if (GUILayout.Button("Prop Materyallerinde GPU Instancing'i Aç"))
+            EnableInstancingOnPropMaterials();
+    }
+
+    /// <summary>
+    /// propPrefabs listesindeki her prefabın kullandığı TÜM materyallerde
+    /// "Enable GPU Instancing" kutusunu işaretler.
+    ///
+    /// Elle yapılabilir ama her materyali tek tek bulup tıklamak gerekiyor;
+    /// 10-15 farklı ağaç/kaya modeli varsa sıkıcı ve biri atlanırsa o model
+    /// instancing'den faydalanamıyor.
+    /// </summary>
+    private void EnableInstancingOnPropMaterials()
+    {
+        SerializedProperty prefabs = serializedObject.FindProperty("propPrefabs");
+        if (prefabs == null || prefabs.arraySize == 0)
+        {
+            Debug.LogWarning("[TrackPropScatter] propPrefabs listesi boş.");
+            return;
+        }
+
+        // HashSet: aynı materyal birden fazla prefabda kullanılıyor olabilir,
+        // iki kez işlemeye gerek yok.
+        var processed = new System.Collections.Generic.HashSet<Material>();
+        int changed = 0;
+
+        for (int i = 0; i < prefabs.arraySize; i++)
+        {
+            GameObject prefab = prefabs.GetArrayElementAtIndex(i).objectReferenceValue as GameObject;
+            if (prefab == null) continue;
+
+            foreach (Renderer renderer in prefab.GetComponentsInChildren<Renderer>(true))
+            {
+                foreach (Material material in renderer.sharedMaterials)
+                {
+                    if (material == null) continue;
+                    if (!processed.Add(material)) continue;
+                    if (material.enableInstancing) continue;
+
+                    material.enableInstancing = true;
+                    EditorUtility.SetDirty(material);
+                    changed++;
+                }
+            }
+        }
+
+        AssetDatabase.SaveAssets();
+
+        Debug.Log($"[TrackPropScatter] {processed.Count} materyal tarandı, " +
+                  $"{changed} tanesinde GPU Instancing açıldı.");
     }
 
     /// <summary>

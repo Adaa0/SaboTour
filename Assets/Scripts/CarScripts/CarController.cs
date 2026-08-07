@@ -80,6 +80,117 @@ public class CarController : NetworkBehaviour
         if (!isOwned) currentCarLocalVelocity.x = newValue;
     }
 
+    // Skid/smoke gösterilip gösterilmeyeceği kararı (shouldShowEffects) eskiden
+    // her Update()'te ham currentCarLocalVelocity.x/isDrifting değerlerinden
+    // YENİDEN hesaplanıyordu. Sorun: düz giderken kısa bir el freni darbesi gibi
+    // ÇOK KISA süren "true" anları, bir sonraki network sync tick'inden önce
+    // tekrar "false"a dönebiliyordu — bu durumda o "true" anı ağa HİÇ
+    // gönderilmeden kayboluyor, diğer client'lar hiç görmüyordu. Çözüm: kararı
+    // owner'da FixedUpdate'te hesaplayıp en az skidEffectMinVisibleDuration kadar
+    // AÇIK TUT (latch), sonra TEK bir senkronize bayrak olarak gönder — kısa
+    // patlamalar bile artık ağa yetişecek kadar uzun sürüyor.
+    [SyncVar(hook = nameof(OnShouldShowEffectsChanged))]
+    private bool netShouldShowEffects;
+
+    private void OnShouldShowEffectsChanged(bool oldValue, bool newValue)
+    {
+        if (!isOwned) shouldShowEffects = newValue;
+    }
+
+    [Tooltip("Skid/smoke efektinin en az bu kadar süre 'açık' kalması garanti edilir — kısa el freni darbelerinin network senkronuna yetişebilmesi için.")]
+    [SerializeField] private float skidEffectMinVisibleDuration = 0.15f;
+    private bool shouldShowEffects;
+    private float skidEffectLatchTimer;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ARABA RENGİ
+    //
+    // 12 renklik sabit palet — LobbyPlayer, herkes hazır olduğunda bu
+    // paletten (0-11 arası) rastgele, tekrarsız birer indeks dağıtıp
+    // MyNetworkManager.SetColorAssignments() ile taşıyor. Araba spawn
+    // olurken MyNetworkManager, SetColorIndex()'i çağırıp gerçek rengi
+    // atıyor. netColorIndex SyncVar olduğu için bu, TÜM client'lara otomatik
+    // yayılıyor — herkes herkesin arabasını doğru renkte görüyor.
+    //
+    // NEDEN MaterialPropertyBlock (ayrı .mat dosyası DEĞİL): her arabaya
+    // farklı bir materyal asset'i vermek, GPU Instancing'i kırar (farklı
+    // materyal = farklı batch). PropertyBlock ile renk değiştirmek,
+    // instancing'i bozmadan per-obje renk uygulamanın standart yolu.
+    // ─────────────────────────────────────────────────────────────────────
+
+    public static readonly Color[] ColorPalette =
+    {
+        new Color32(0xE6, 0x39, 0x46, 0xFF), // Kırmızı
+        new Color32(0xF3, 0x72, 0x2C, 0xFF), // Kırmızı-Turuncu
+        new Color32(0xF8, 0x96, 0x1E, 0xFF), // Turuncu
+        new Color32(0xF9, 0xC7, 0x4F, 0xFF), // Sarı-Turuncu
+        new Color32(0xB5, 0xE6, 0x55, 0xFF), // Sarı-Yeşil
+        new Color32(0x43, 0xAA, 0x8B, 0xFF), // Yeşil
+        new Color32(0x26, 0xC6, 0xDA, 0xFF), // Mavi-Yeşil
+        new Color32(0x3A, 0x86, 0xFF, 0xFF), // Mavi
+        new Color32(0x71, 0x59, 0xC1, 0xFF), // Mavi-Mor
+        new Color32(0x9D, 0x4E, 0xDD, 0xFF), // Mor
+        new Color32(0xE0, 0x21, 0x8A, 0xFF), // Kırmızı-Mor
+        new Color32(0x1B, 0x1B, 0x1B, 0xFF), // Siyah
+    };
+
+    [Tooltip("Rengin uygulanacağı Renderer'lar (gövde + spoiler gibi ayrı parçalar buraya eklenir). Her Renderer'ın materyal slotları TEK TEK taranır, İSMİNDE 'CarBody' geçen slota renk uygulanır — aynı Renderer'daki BAŞKA bir materyal (ör. ayrı bir 'colormap' materyali) etkilenmez. ZORUNLU: boş bırakılırsa renk hiç uygulanmaz.")]
+    [SerializeField] private Renderer[] paintableRenderers;
+
+    [SyncVar(hook = nameof(OnColorIndexChanged))]
+    private int netColorIndex = -1;
+
+    /// <summary>Bu arabaya atanan renk indeksi (ColorPalette'e index) — minimap marker'ı gibi dış sistemler bunu okuyup kendi rengini eşleştirebilir.</summary>
+    public int ColorIndex => netColorIndex;
+
+    private static MaterialPropertyBlock carColorPropertyBlock;
+
+    /// <summary>Server, spawn sırasında (MyNetworkManager) bu arabaya rengini atamak için çağırıyor.</summary>
+    [Server]
+    public void SetColorIndex(int index)
+    {
+        netColorIndex = index;
+    }
+
+    private void OnColorIndexChanged(int oldValue, int newValue)
+    {
+        ApplyCarColor(newValue);
+    }
+
+    private void ApplyCarColor(int index)
+    {
+        if (paintableRenderers == null) return;
+        if (index < 0 || index >= ColorPalette.Length) return;
+
+        carColorPropertyBlock ??= new MaterialPropertyBlock();
+        Color c = ColorPalette[index];
+
+        foreach (Renderer renderer in paintableRenderers)
+        {
+            if (renderer == null) continue;
+
+            Material[] materials = renderer.sharedMaterials;
+            for (int slot = 0; slot < materials.Length; slot++)
+            {
+                Material mat = materials[slot];
+                if (mat == null) continue;
+                // "(Instance)" gibi eklerle de eşleşsin diye Contains kullanılıyor.
+                if (mat.name.IndexOf("CarBody", System.StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                // ÖNEMLİ: slot index'i BELİRTMEDEN SetPropertyBlock çağırmak
+                // Renderer'daki TÜM materyal slotlarını etkiler — aynı Renderer
+                // üzerinde CarBody dışında başka bir materyal (ör. colormap)
+                // varsa o da yanlışlıkla boyanır. Bu yüzden slot'a özel
+                // GetPropertyBlock/SetPropertyBlock kullanılıyor.
+                renderer.GetPropertyBlock(carColorPropertyBlock, slot);
+                carColorPropertyBlock.SetColor("_BaseColor", c);
+                carColorPropertyBlock.SetColor("_Color", c);
+                renderer.SetPropertyBlock(carColorPropertyBlock, slot);
+            }
+        }
+    }
+
     private void OnDriftingChanged(bool oldValue, bool newValue)
     {
         if (!isOwned) isDrifting = newValue;
@@ -121,7 +232,7 @@ public class CarController : NetworkBehaviour
 
     private void ApplyRemoteTirePosition(int index, Vector3 localPos)
     {
-        if (isOwned) return; // owner zaten kendi hesapladığı pozisyonu kullanıyor
+        if (HasControl) return; // owner zaten kendi hesapladığı pozisyonu kullanıyor
         if (tires[index] != null)
             tires[index].transform.localPosition = localPos;
     }
@@ -244,12 +355,99 @@ public class CarController : NetworkBehaviour
 
     #endregion
 
+    #region Fotoğraf / Capsule Sahnesi Modu
+
+    [Header("Fotoğraf Sahnesi (GEÇİCİ ARAÇ)")]
+    [Tooltip("SADECE ekran görüntüsü/capsule çekim sahnesinde aç.\n\n" +
+             "Normalde araba SADECE 'isOwned' (bu araba bu oyuncunun) olduğunda " +
+             "hareket eder — ağ oturumu yoksa isOwned hep false kalır ve araba " +
+             "sahneye atıldığında hiç kıpırdamaz. Bu kutu işaretliyken araba " +
+             "kendini sahibi sayar, yani NetworkManager/lobi/host olmadan, " +
+             "sıradan bir sahnede WASD ile sürebilirsin.\n\n" +
+             "GERÇEK OYUN SAHNELERİNDE KAPALI KALMALI — açık kalırsa her " +
+             "client kendi ekranındaki TÜM arabaları sürmeye çalışır.")]
+    [SerializeField] private bool photoStudioMode = false;
+
+    /// <summary>
+    /// Bu arabanın girdisini bu makine mi işliyor? Normalde Mirror'ın
+    /// 'isOwned' değeri, fotoğraf sahnesinde ise elle açılan bayrak.
+    /// </summary>
+    private bool HasControl => photoStudioMode || isOwned;
+
+    /// <summary>
+    /// CarCameraFollow bunu okuyup takip kamerasını ağ olmadan açabiliyor.
+    /// </summary>
+    public bool PhotoStudioMode => photoStudioMode;
+
+    #endregion
+
+    #region Yarış Sonu / Podyum
+
+    // Yarış bitip podyum sahnesine geçilince true olur — fizik/input tamamen
+    // durur. Sadece OWNER'ın kendi instance'ında anlamlı; remote client'lar
+    // zaten NetworkTransform ile senkronize pozisyonu okuyor, owner durunca
+    // onlar da otomatik duruyor.
+    private bool raceEndedFrozen = false;
+
+    /// <summary>
+    /// RacePodiumManager, YARIŞ BİTTİĞİNDE arabayı podyum kolonundaki spawn
+    /// noktasına ışınlamak için çağırır. Sadece kontrolü olan (owner) client
+    /// çağırmalı — Sync Direction Client To Server olduğu için pozisyonu
+    /// yetkili şekilde yazabilen taraf odur.
+    /// </summary>
+    public void TeleportTo(Vector3 position, Quaternion rotation)
+    {
+        if (!HasControl || carRB == null) return;
+
+        carRB.linearVelocity = Vector3.zero;
+        carRB.angularVelocity = Vector3.zero;
+        carRB.position = position;
+        carRB.rotation = rotation;
+        transform.SetPositionAndRotation(position, rotation);
+    }
+
+    /// <summary>
+    /// Podyuma ışınlandıktan sonra input/özel fizik hesaplamasını (Suspension,
+    /// Movement vb.) tamamen durdurur — AMA Rigidbody'yi kinematic YAPMIYOR.
+    /// Spawn noktası kolonun biraz üstünde olduğu için, isKinematic false
+    /// kaldığında Unity'nin normal fizik motoru yerçekimiyle arabayı doğal
+    /// şekilde kolonun üstüne düşürüp oturtuyor (kolonun bir Collider'ı
+    /// olması ŞART, yoksa araba sonsuza dek düşer).
+    /// </summary>
+    public void FreezeForRaceEnd()
+    {
+        raceEndedFrozen = true;
+
+        // Düşüşü yarış anındaki eski hızla değil sıfırdan başlat — yoksa
+        // araba kolona garip bir açıyla/hızla çarpabilir.
+        if (carRB != null)
+        {
+            carRB.linearVelocity = Vector3.zero;
+            carRB.angularVelocity = Vector3.zero;
+        }
+
+        // Teker/duman/skidmark görselleri artık HİÇ güncellenmeyecek (bkz.
+        // Update() içindeki raceEndedFrozen erken çıkışı) — o yüzden burada
+        // son bir kere elle kapatıyoruz, yoksa tam o anda açık kalmış bir
+        // duman/iz sonsuza kadar ekranda asılı kalır.
+        ToggleSkidMarks(false);
+        ToggleSkidSmokes(false, false);
+    }
+
+    #endregion
+
     #region Unity Ana Fonksiyonları
 
     private void Awake()
     {
         if (carRB == null)
             carRB = GetComponent<Rigidbody>();
+
+        // Fotoğraf modunda ağ hiç başlamıyor, yani OnStartAuthority() de hiç
+        // çağrılmıyor — yerçekimini normalde orada açıyorduk. Burada elle
+        // açmazsak araba havada asılı kalır.
+        if (photoStudioMode && carRB != null)
+            carRB.useGravity = true;
     }
 
     /// <summary>
@@ -277,6 +475,12 @@ public class CarController : NetworkBehaviour
 
         if (carRB != null)
             carRB.useGravity = false;
+
+        // Host, kendi arabası dışındaki arabalara baktığında SyncVar hook'ları
+        // (deserialize'a bağlı oldukları için) tetiklenmeyebiliyor — bu proje
+        // içinde daha önce de yaşanan bir durum. Rengin spawn anında kesin
+        // uygulanması için OnStartClient'ta da elle çağırıyoruz.
+        ApplyCarColor(netColorIndex);
     }
 
     /// <summary>
@@ -302,7 +506,7 @@ public class CarController : NetworkBehaviour
         // NetworkTransform'un yazdığı pozisyonla çakışıp titremeye
         // sebep olur).
         // ─────────────────────────────────────────────────────────────
-        if (!isOwned) return;
+        if (!HasControl || raceEndedFrozen) return;
 
         GroundCheck();
         CalculateCarVelocity();
@@ -326,11 +530,35 @@ public class CarController : NetworkBehaviour
         netIsGrounded = isGrounded;
         netVelocityRatio = carVelocityRatio;
         netLocalVelocityX = currentCarLocalVelocity.x;
+
+        // shouldShowEffects kararı burada (owner'ın FixedUpdate'inde) hesaplanıp
+        // latch'leniyor — Vfx() artık bunu yeniden hesaplamıyor, doğrudan bu
+        // (senkronize edilmiş) sonucu kullanıyor.
+        float skidThreshold = isCarOnIce ? 2f : minSideSkidVelocity;
+        bool rawShouldShowEffects = isGrounded &&
+                                    (Mathf.Abs(currentCarLocalVelocity.x) > skidThreshold ||
+                                    (isDrifting && currentSpeed > 5f) ||
+                                    (isCarOnIce && Mathf.Abs(steerInput) > 0.5f)) &&
+                                    carVelocityRatio > 0;
+
+        skidEffectLatchTimer = rawShouldShowEffects
+            ? skidEffectMinVisibleDuration
+            : Mathf.Max(0f, skidEffectLatchTimer - Time.fixedDeltaTime);
+
+        shouldShowEffects = skidEffectLatchTimer > 0f;
+        netShouldShowEffects = shouldShowEffects;
     }
 
     private void Update()
     {
-        if (isOwned)
+        // Visuals() bilerek ÇAĞRILMIYOR — TireVisuals() carVelocityRatio'nun
+        // SON değerine göre tekerleği döndürmeye devam ederdi (araba durduktan
+        // sonra bile tekerler dönüyor gibi görünmesinin sebebi buydu).
+        // Donma anında tekerlek/direksiyon açısı ne haldeyse öyle kalsın diye
+        // bu fonksiyona hiç girmiyoruz.
+        if (raceEndedFrozen) return;
+
+        if (HasControl)
         {
             GetPlayerInput();
         }
@@ -580,16 +808,49 @@ public class CarController : NetworkBehaviour
 
     private void Vfx()
     {
-        float skidThreshold = isCarOnIce ? 2f : minSideSkidVelocity;
-        bool shouldShowEffects = isGrounded &&
-                                 (Mathf.Abs(currentCarLocalVelocity.x) > skidThreshold ||
-                                 (isDrifting && currentSpeed > 5f) ||
-                                 (isCarOnIce && Mathf.Abs(steerInput) > 0.5f)) &&
-                                 carVelocityRatio > 0;
+        // Karar (latch'li) artık FixedUpdate'te hesaplanıyor — bkz. shouldShowEffects
+        // ve netShouldShowEffects. Owner için orada güncelleniyor, remote client'lar
+        // için OnShouldShowEffectsChanged hook'u ile geliyor. İkisi de AYNI ANDA
+        // tetikleniyor — kısa el freni darbelerinin bile garanti görünmesi
+        // gerektiği için (bkz. skidEffectMinVisibleDuration) burada bir "duman
+        // gecikmesi" YOK: kısa bir gecikme denendi ama darbe süresi gecikmeden
+        // kısa kaldığında dumanın HİÇ tetiklenmemesine sebep oluyordu (bug,
+        // geri alındı). Doğal "duman biraz sonra yükseliyor" hissi istenirse
+        // bunu particle'ın KENDİ Size/Opacity over Lifetime eğrisiyle (aşağıda
+        // açıklandı) yapmak gerekiyor, açma/kapama zamanlamasıyla değil.
+        // Efekt YENİ başladıysa (önceki karede kapalıydı, şimdi açık) burada
+        // yakalanıyor — ToggleSkidSmokes bunu, Rate Over Time'ın şansına
+        // bırakmadan garanti bir parçacık patlaması üretmek için kullanıyor.
+        bool justStarted = shouldShowEffects && !wasShowingEffects;
+        wasShowingEffects = shouldShowEffects;
 
         ToggleSkidMarks(shouldShowEffects);
-        ToggleSkidSmokes(shouldShowEffects);
+
+        // Duman, shouldShowEffects false OLDUKTAN SONRA da bir süre daha
+        // "açık" tutuluyor (Stop() hemen çağrılmıyor). NEDEN: sürekli bir
+        // drift sırasında ham koşul (currentCarLocalVelocity.x eşiği vb.)
+        // çok kısa anlarla false'a düşüp tekrar true olabiliyor — her
+        // false'ta Stop() çağrılırsa duman görünür şekilde "kesilip" tekrar
+        // patlıyormuş gibi hissettiriyordu (skidmark'ta bu sorun yok çünkü
+        // TrailRenderer durunca bile eski iz duruyor, duman gerçekten
+        // kesiliyor). Bu tolerans SADECE ne zaman Stop() çağrılacağını
+        // geciktiriyor, ne zaman patlama (Emit) tetikleneceğini DEĞİL —
+        // justStarted hâlâ ham shouldShowEffects geçişinden hesaplanıyor.
+        smokeStopHoldTimer = shouldShowEffects
+            ? smokeStopHoldDuration
+            : Mathf.Max(0f, smokeStopHoldTimer - Time.deltaTime);
+
+        bool smokeShouldPlay = shouldShowEffects || smokeStopHoldTimer > 0f;
+        ToggleSkidSmokes(smokeShouldPlay, justStarted);
     }
+
+    private bool wasShowingEffects;
+    [Tooltip("Efekt başladığı AN, Rate Over Time'ı beklemeden garanti üretilecek parçacık sayısı — kısa el freni darbelerinde bile duman şansa bırakılmadan görünsün diye.")]
+    [SerializeField] private int smokeBurstCount = 10;
+
+    private float smokeStopHoldTimer;
+    [Tooltip("shouldShowEffects false olduktan sonra duman Stop() çağrılmadan önce beklenecek ekstra süre — sürekli drift içindeki çok kısa doğal kesintilerde dumanın görünür şekilde kesilip yeniden patlamasını önler.")]
+    [SerializeField] private float smokeStopHoldDuration = 0.3f;
 
     private void ToggleSkidMarks(bool toggle)
     {
@@ -599,14 +860,24 @@ public class CarController : NetworkBehaviour
         }
     }
 
-    private void ToggleSkidSmokes(bool toggle)
+    private void ToggleSkidSmokes(bool toggle, bool burstOnStart)
     {
         foreach (var smoke in skidSmokes)
         {
-            if (smoke != null)
+            if (smoke == null) continue;
+
+            if (toggle)
             {
-                if (toggle) { if (!smoke.isPlaying) smoke.Play(); }
-                else { if (smoke.isPlaying) smoke.Stop(); }
+                if (!smoke.isPlaying) smoke.Play();
+                // Rate Over Time'ın "şansına" bırakmadan, efekt başladığı anda
+                // birkaç parçacığı doğrudan üretiyoruz — çok kısa açık kalma
+                // pencerelerinde bile (örn. skidEffectMinVisibleDuration kadar)
+                // en az bu kadar parçacık GARANTİ görünür.
+                if (burstOnStart) smoke.Emit(smokeBurstCount);
+            }
+            else
+            {
+                if (smoke.isPlaying) smoke.Stop();
             }
         }
     }

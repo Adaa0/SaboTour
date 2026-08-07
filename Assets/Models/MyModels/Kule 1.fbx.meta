@@ -3,7 +3,32 @@ guid: b450fff1c8024c04c97a33fe7ec34d0e
 ModelImporter:
   serializedVersion: 24200
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: accent_red
+    second: {fileID: 2100000, guid: 4c02eab69dccd2f42a2ee36b6da33820, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: glass_tinted
+    second: {fileID: 2100000, guid: 3b183c1784a37064ea6aa0b435d46f02, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: metal_dark
+    second: {fileID: 2100000, guid: 720492f3f983b3f4dbe16537ce3da82c, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: wood_dark
+    second: {fileID: 2100000, guid: f185dc5af38a4584087fafc3a7e9a1e6, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: wood_weathered
+    second: {fileID: 2100000, guid: b716a9c294d64a34c9633acc2714a54a, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0

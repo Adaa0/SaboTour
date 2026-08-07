@@ -31,6 +31,14 @@ public class TrackPropScatter : MonoBehaviour
     [Tooltip("Yol kenarına dizilecek modeller — listeden rastgele seçilir.")]
     [SerializeField] private GameObject[] propPrefabs;
 
+    [Tooltip("Bu scatter'ın ürettiği propların toplanacağı obje adı.\n\n" +
+             "AYNI SAHNEDE BİRDEN FAZLA TrackPropScatter KULLANIYORSAN HER BİRİNE " +
+             "FARKLI BİR AD VER (ör. 'TrackProps_Agaclar' ve 'TrackProps_Kayalar').\n\n" +
+             "Sebep: her scatter temizlik yaparken kendi konteynerini ADINA GÖRE " +
+             "buluyor. İkisi aynı adı kullanırsa, ikinci scatter birincinin " +
+             "proplarını siler ve sadece bir grup görünür.")]
+    [SerializeField] private string groupName = "TrackProps";
+
     [Header("Yoğunluk")]
     [Tooltip("Yol boyunca kaç birimde bir prop denemesi yapılsın. Küçük değer = daha sık.")]
     [SerializeField] private float spacing = 6f;
@@ -69,6 +77,27 @@ public class TrackPropScatter : MonoBehaviour
     [Header("Performans / Fizik")]
     [Tooltip("Propların collider'ları kaldırılsın mı? Sadece dekorsa AÇIK bırak — çok sayıda collider performansı düşürür.")]
     [SerializeField] private bool removeColliders = true;
+
+    [Tooltip("Bu scatter'ın propları gölge yapsın mı?\n\n" +
+             "EN BÜYÜK PERFORMANS AYARI BU. Gölge çizilirken her obje cascade " +
+             "sayısı kadar TEKRAR çiziliyor — yani gölge yapan 1500 prop, " +
+             "4 cascade ile 6000 ekstra çizim demek.\n\n" +
+             "ÖNERİ: Ağaçlar için AÇIK (gölgeleri manzarayı kuruyor), kaya/çalı/" +
+             "çim için KAPALI (gölgeleri fark edilmiyor ama aynı maliyeti " +
+             "ödüyorlar). Bunun için iki ayrı TrackPropScatter component'i kullan.")]
+    [SerializeField] private bool castShadows = true;
+
+    [Tooltip("Proplar üretildikten sonra tek bir toplu mesh'e birleştirilsin mi " +
+             "(static batching).\n\n" +
+             "⚠️ BU PROJEDE KAPALI KALMALI. Static batching, GPU Instancing'i " +
+             "DEVRE DIŞI BIRAKIYOR — ikisi aynı anda çalışmıyor ve bizim " +
+             "senaryomuzda (az sayıda model, çok kopya) instancing çok daha iyi " +
+             "sonuç veriyor.\n\n" +
+             "Açık bırakılırsa belirtisi şudur: Profiler'da '(Instancing) Batches' " +
+             "neredeyse sıfıra düşer ve toplam Batches sayısı birkaç bine fırlar.\n\n" +
+             "Sadece instancing'in işe yaramadığı bir durumda (ör. her propun " +
+             "farklı materyali varsa) denemeye değer.")]
+    [SerializeField] private bool useStaticBatching = false;
 
     [Tooltip("Prop dizilimi pistin seed'inden türetiliyor, yani aynı pistte hep " +
              "aynı dizilim çıkar. Bu sayıyı değiştirirsen PİST AYNI KALIR ama " +
@@ -112,8 +141,38 @@ public class TrackPropScatter : MonoBehaviour
             trackGenerator.onTrackGenerated.RemoveListener(Scatter);
     }
 
+    /// <summary>
+    /// Konteyner adı. Boş bırakılmışsa varsayılana düşüyor ki hiçbir zaman
+    /// isimsiz bir obje oluşmasın.
+    /// </summary>
+    private string ResolvedGroupName =>
+        string.IsNullOrWhiteSpace(groupName) ? "TrackProps" : groupName;
+
+    /// <summary>
+    /// Aynı objede aynı grup adını kullanan başka bir scatter var mı diye bakar.
+    /// Varsa ikisi birbirinin proplarını siler ve sadece biri görünür — bu,
+    /// sessizce yaşanması çok kolay bir hata olduğu için açıkça uyarıyoruz.
+    /// </summary>
+    private void WarnOnDuplicateGroupName()
+    {
+        foreach (TrackPropScatter other in GetComponents<TrackPropScatter>())
+        {
+            if (other == this) continue;
+            if (other.ResolvedGroupName != ResolvedGroupName) continue;
+
+            Debug.LogWarning(
+                $"[TrackPropScatter] Bu objede '{ResolvedGroupName}' grup adını kullanan " +
+                "BİRDEN FAZLA TrackPropScatter var. İkisi birbirinin proplarını siler ve " +
+                "sadece bir grup görünür. Her scatter'ın 'Group Name' alanına FARKLI bir " +
+                "ad yaz (ör. 'TrackProps_Agaclar' / 'TrackProps_Kayalar').", this);
+            return;
+        }
+    }
+
     public void Scatter()
     {
+        WarnOnDuplicateGroupName();
+
         // Start() sadece Play modunda çalışıyor, bu yüzden editör butonundan
         // çağrıldığında trackGenerator henüz atanmamış olur — burada çözüyoruz.
         if (trackGenerator == null)
@@ -141,7 +200,7 @@ public class TrackPropScatter : MonoBehaviour
 
         ClearProps();
 
-        propContainer = new GameObject("TrackProps").transform;
+        propContainer = new GameObject(ResolvedGroupName).transform;
         propContainer.SetParent(transform, false);
 
         // Seed'den türetilen rastgelelik → her client'ta aynı sonuç.
@@ -210,6 +269,33 @@ public class TrackPropScatter : MonoBehaviour
                 : "";
             Debug.Log($"[TrackPropScatter] {placedCount} prop yerleştirildi (seed {trackGenerator.seed}).{capNote}");
         }
+
+        ApplyStaticBatching();
+    }
+
+    /// <summary>
+    /// Tüm propları toplu mesh'lere birleştirir (static batching).
+    ///
+    /// NEDEN İŞE YARIYOR: CPU her karede her obje için ayrı bir çizim emri
+    /// gönderiyor. 2000 ağaç = 2000 emir. Birleştirdikten sonra Unity aynı
+    /// materyali paylaşanları tek bir büyük mesh'te toplayıp tek emirle
+    /// gönderiyor — çizim çağrısı sayısı çöküyor.
+    ///
+    /// Proplar hiç hareket etmediği için bu tamamen güvenli. Tek bedeli
+    /// birleştirilmiş mesh'in ekstra bellek kullanması.
+    ///
+    /// MUTLAKA propların HEPSİ yerleştirildikten SONRA çağrılmalı — birleştirme
+    /// yapıldıktan sonra o konteynere yeni obje eklenirse batch'e dahil olmaz.
+    /// </summary>
+    private void ApplyStaticBatching()
+    {
+        if (!useStaticBatching) return;
+        if (propContainer == null) return;
+
+        StaticBatchingUtility.Combine(propContainer.gameObject);
+
+        if (showDebugLogs)
+            Debug.Log("[TrackPropScatter] Proplar static batching ile birleştirildi.");
     }
 
     private void PlaceProp(Vector3 position, System.Random rng)
@@ -234,6 +320,12 @@ public class TrackPropScatter : MonoBehaviour
         if (removeColliders)
             foreach (Collider col in prop.GetComponentsInChildren<Collider>())
                 DestroySafe(col);
+
+        // Gölge yapmayan proplar, gölge haritası çizilirken tamamen atlanıyor.
+        // Görünürlükleri değişmiyor — sadece YERE gölge düşürmüyorlar.
+        if (!castShadows)
+            foreach (Renderer renderer in prop.GetComponentsInChildren<Renderer>())
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
     }
 
     /// <summary>
@@ -286,8 +378,10 @@ public class TrackPropScatter : MonoBehaviour
         if (propContainer != null)
             DestroySafe(propContainer.gameObject);
 
-        // Sahnede eski bir konteyner kalmışsa (ör. sahne yeniden yüklendiyse) onu da temizle
-        Transform existing = transform.Find("TrackProps");
+        // Sahnede eski bir konteyner kalmışsa (ör. sahne yeniden yüklendiyse) onu
+        // da temizle. SADECE KENDİ adımızı arıyoruz — başka bir TrackPropScatter'ın
+        // konteynerine dokunmuyoruz.
+        Transform existing = transform.Find(ResolvedGroupName);
         if (existing != null) DestroySafe(existing.gameObject);
     }
 

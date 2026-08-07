@@ -525,8 +525,8 @@ Camera:
   m_GameObject: {fileID: 405631006}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.20440249, g: 0.22142164, b: 0.24528301, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.3773585, g: 0.077133, b: 0.09258712, a: 0}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -883,6 +883,77 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 484581931}
   m_CullTransparentMesh: 1
+--- !u!1 &733901842
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 733901845}
+  - component: {fileID: 733901844}
+  - component: {fileID: 733901843}
+  m_Layer: 0
+  m_Name: GameSettings
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &733901843
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 733901842}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ca6b3089c953c34c8e0eb7227d91111, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FpsDisplay
+  corner: 1
+  fontSize: 18
+  padding: {x: 14, y: 12}
+  startVisible: 1
+  toggleKey: 96
+  minWindowSeconds: 3
+  dontDestroyOnLoad: 1
+  goodFps: 60
+  okFps: 30
+--- !u!114 &733901844
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 733901842}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1d54d6bee1786454e9eab159a44847df, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FrameRateLimiter
+  mode: 1
+  targetFrameRate: 120
+  vSyncCount: 1
+  dontDestroyOnLoad: 1
+  applyInEditor: 1
+--- !u!4 &733901845
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 733901842}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 246.77296, y: 928.6826, z: -45.65557}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1158948778
 GameObject:
   m_ObjectHideFlags: 0
@@ -1245,7 +1316,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b3e7dd861af93f64f854d9b409fad60f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TransportSwitcher
-  mode: 1
+  mode: 0
   kcpTransport: {fileID: 1760123939}
   steamTransport: {fileID: 1760123936}
 --- !u!114 &1760123939
@@ -1651,3 +1722,4 @@ SceneRoots:
   - {fileID: 1987375056}
   - {fileID: 1158948781}
   - {fileID: 1760123935}
+  - {fileID: 733901845}

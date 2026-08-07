@@ -349,11 +349,30 @@ public class GhostReplay : MonoBehaviour
 
     // ──────────────────────────────────────────────────────────────────────
 
-    /// <summary>Sahnedeki, bize ait olan arabayı bulur.</summary>
+    /// <summary>
+    /// Sahnedeki, bizim sürdüğümüz arabayı bulur.
+    ///
+    /// İKİ DURUM VAR:
+    /// 1) Normal oyun / host — Mirror'ın 'isOwned' değeri doğru arabayı verir.
+    /// 2) Fotoğraf sahnesi — ağ oturumu hiç başlamadığı için 'isOwned' TÜM
+    ///    arabalarda false kalır ve burası null dönerdi, F5/F6 sessizce hiçbir
+    ///    şey yapmazdı. Bu yüzden CarController'daki "Photo Studio Mode"
+    ///    kutusu açık olan arabayı da kabul ediyoruz.
+    /// </summary>
     private static Transform FindLocalCar()
     {
-        foreach (CarController car in FindObjectsByType<CarController>(FindObjectsSortMode.None))
+        CarController[] cars = FindObjectsByType<CarController>(FindObjectsSortMode.None);
+
+        foreach (CarController car in cars)
             if (car.isOwned) return car.transform;
+
+        foreach (CarController car in cars)
+            if (car.PhotoStudioMode) return car.transform;
+
+        if (cars.Length > 0)
+            Debug.LogWarning("[GhostReplay] Sürülebilir araba bulunamadı. Fotoğraf " +
+                             "sahnesindeysen arabanın CarController'ında 'Photo Studio Mode' " +
+                             "kutusunu işaretle.");
 
         return null;
     }
