@@ -6,6 +6,8 @@ TagManager:
   tags:
   - Checkpoint
   - Ice
+  - Curb
+  - Grass
   layers:
   - Default
   - TransparentFX

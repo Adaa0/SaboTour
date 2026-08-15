@@ -46,7 +46,13 @@ public class RaceLeaderboard : MonoBehaviour
         for (int i = 0; i < ordered.Count; i++)
         {
             var p = ordered[i];
-            string status = p.isRacing ? $"Tur {p.CurrentLap}/{p.maxLaps} — CP {p.CurrentCheckpoint}" : "BİTİRDİ";
+            string status;
+            if (p.HasFinished)
+                status = "BİTİRDİ";
+            else if (p.isRacing)
+                status = $"Tur {p.CurrentLap}/{p.maxLaps} — CP {p.CurrentCheckpoint}";
+            else
+                status = "SÜRE DOLDU"; // Sabotajcı kazandı, bu yarışçı bitiremeden durduruldu
 
             // Süre SADECE kendi satırında gösteriliyor — bir yarışçı diğerinin
             // tam süresini görmemeli, sadece sırayı görmeli.

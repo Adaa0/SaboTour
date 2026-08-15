@@ -326,15 +326,14 @@ public class MinimapController : MonoBehaviour
         for (int i = 0; i < count; i++)
         {
             Vector3 curr = WorldToMapLocal(trackPoints[i], roadHeight);
+            Vector3 prevPt = WorldToMapLocal(trackPoints[(i - 1 + count) % count], roadHeight);
             Vector3 next = WorldToMapLocal(trackPoints[(i + 1) % count], roadHeight);
 
-            Vector3 dir = next - curr;
-            // Üst üste binen noktalarda yön hesaplanamaz (sıfır vektör) —
-            // bu durumda bir önceki yönü koru, yoksa yol o noktada çöker.
-            Vector3 right = dir.sqrMagnitude > 0.0000001f
-                ? Vector3.Cross(Vector3.up, dir.normalized).normalized
-                : lastRight;
-            lastRight = right;
+            // ÖNEMLİ: DrawCurbs ile BİREBİR aynı miter hesabı — ikisi farklı
+            // offset yöntemi kullanırsa keskin virajlarda yol ile kenarlık
+            // birbirinden ayrılıp aralarında boşluk oluşuyor (yaşanmış bug).
+            Vector3 right = ComputeMiterRight(prevPt, curr, next, lastRight);
+            lastRight = right.sqrMagnitude > 0.0001f ? right.normalized : lastRight;
 
             vertices[i * 2] = curr - right * halfWidth;
             vertices[i * 2 + 1] = curr + right * halfWidth;
@@ -378,6 +377,40 @@ public class MinimapController : MonoBehaviour
     ///     yüzde biri kadar bir alana sığdığı için gerçek değer burada
     ///     görünmeyecek kadar sık desen üretirdi.
     /// </summary>
+    /// <summary>
+    /// "Miter join" — TrackGenerator.ComputeMiterRight ile BİREBİR aynı
+    /// mantık (gerçek pist ve minimap ayrı sınıflar olduğu için kod
+    /// tekrarlanıyor, projenin genel deseni bu). Offset yönü önceki+sonraki
+    /// segmentin açıortayından hesaplanıyor, keskin virajlarda ardışık
+    /// dörtgenlerin hizasızlığından doğan çentik/burulmayı önlüyor.
+    /// fallback: yön hesaplanamayan dejenere durumlarda (üst üste binen
+    /// noktalar) kullanılan önceki geçerli yön.
+    /// </summary>
+    private static Vector3 ComputeMiterRight(Vector3 prev, Vector3 curr, Vector3 next, Vector3 fallback, float miterLimit = 3f)
+    {
+        Vector3 dirIn = curr - prev;
+        Vector3 dirOut = next - curr;
+
+        if (dirIn.sqrMagnitude < 0.0000001f || dirOut.sqrMagnitude < 0.0000001f)
+            return fallback;
+
+        dirIn.Normalize();
+        dirOut.Normalize();
+
+        Vector3 rightIn = Vector3.Cross(Vector3.up, dirIn).normalized;
+        Vector3 rightOut = Vector3.Cross(Vector3.up, dirOut).normalized;
+
+        Vector3 miter = rightIn + rightOut;
+        if (miter.sqrMagnitude < 0.0001f) return rightOut; // ~180° dönüş, çok nadir
+
+        miter.Normalize();
+
+        float dot = Vector3.Dot(rightIn, miter);
+        float scale = dot > (1f / miterLimit) ? 1f / dot : miterLimit;
+
+        return miter * scale;
+    }
+
     private void DrawCurbs(List<Vector3> trackPoints, float roadHalfWidth)
     {
         if (curbObject != null)
@@ -435,19 +468,19 @@ public class MinimapController : MonoBehaviour
                 int pointIndex = i % count;
 
                 Vector3 curr = WorldToMapLocal(trackPoints[pointIndex], curbHeight);
+                Vector3 prevPt = WorldToMapLocal(trackPoints[(pointIndex - 1 + count) % count], curbHeight);
                 Vector3 next = WorldToMapLocal(trackPoints[(pointIndex + 1) % count], curbHeight);
 
                 if (i > 0)
-                {
-                    Vector3 prev = WorldToMapLocal(trackPoints[(i - 1) % count], curbHeight);
-                    cumulative += Vector3.Distance(prev, curr);
-                }
+                    cumulative += Vector3.Distance(prevPt, curr);
 
-                Vector3 dir = next - curr;
-                Vector3 right = dir.sqrMagnitude > 0.0000001f
-                    ? Vector3.Cross(Vector3.up, dir.normalized).normalized
-                    : lastRight;
-                lastRight = right;
+                // Miter join — gerçek pistteki TrackGenerator.ComputeMiterRight
+                // ile AYNI mantık (bkz. oradaki açıklama): offset yönü sadece
+                // bir sonraki segmente değil, önceki+sonraki segmentin
+                // açıortayına göre hesaplanıyor, keskin virajlarda çentik
+                // oluşmasını önlüyor.
+                Vector3 right = ComputeMiterRight(prevPt, curr, next, lastRight);
+                lastRight = right.sqrMagnitude > 0.0001f ? right.normalized : lastRight;
 
                 vertices.Add(curr + right * (sideSign * roadHalfWidth));
                 vertices.Add(curr + right * (sideSign * (roadHalfWidth + curbW)));
@@ -519,6 +552,19 @@ public class MinimapController : MonoBehaviour
 
         Material material = MakeUnlitMaterial(Color.white);
         material.mainTexture = texture;
+
+        // Keskin virajlarda miterLimit'e rağmen kenarlığın kendi üçgenleri
+        // (aynı yükseklikte, birbirine çok yakın) hafifçe üst üste binebiliyor
+        // — bu, kamera hareket ettikçe kare kare hangi üçgenin "kazandığını"
+        // değiştiren klasik bir z-fighting titremesi olarak görünüyor.
+        // Render Queue'yu normal Opaque'ın (2000) ÜSTÜNE çıkarıp ZWrite'ı
+        // kapatıyoruz — bu sayede kenarlık HER ZAMAN kendi üzerine binen
+        // parçaların üstünde, tutarlı şekilde çiziliyor (titreme yerine sabit
+        // kırmızı/beyaz görünüyor).
+        material.renderQueue = 2500;
+        if (material.HasProperty("_ZWrite"))
+            material.SetInt("_ZWrite", 0);
+
         return material;
     }
 
@@ -607,6 +653,16 @@ public class MinimapController : MonoBehaviour
                 marker = CreateCarMarker(player).transform;
                 carMarkers[player] = marker;
             }
+
+            // Yarışı bitiren oyuncunun arabası pistten kalkıyor (izleyici
+            // moduna geçiyor, bkz. RacerSpectator.cs) — minimap'te de
+            // görünmemeli, yoksa sabotajcı artık orada olmayan bir arabayı
+            // hedeflemeye çalışırdı.
+            bool visible = !player.HasFinished;
+            if (marker.gameObject.activeSelf != visible)
+                marker.gameObject.SetActive(visible);
+
+            if (!visible) continue;
 
             Transform carTransform = player.transform;
             marker.localPosition = WorldToMapLocal(carTransform.position, carHeight);

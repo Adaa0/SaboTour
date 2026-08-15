@@ -5,12 +5,6 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 0
-    path: Assets/Scenes/itch.io deneme/MainMenu.unity
-    guid: 2d6d506f7e093f1438ab562b7610f985
-  - enabled: 0
-    path: "Assets/Scenes/itch.io deneme/MA\u0130N GAME \u0130TCH.\u0130O.unity"
-    guid: 73ab561fcfae20540b563cad5c5d539f
   - enabled: 1
     path: Assets/Scenes/Mirror/Offline Scene.unity
     guid: 7a6f3c1736474924390dd534e84d3cb1

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using Mirror;
 
@@ -323,11 +324,27 @@ public class CarController : NetworkBehaviour
     #region 8. El Freni Ayarları (Drift)
 
     [Header("El Freni Ayarları - Arcade Drift")]
+    [Tooltip("Drift sırasında ARKA süspansiyon yaylarının ne kadar yumuşayacağı. DİKKAT: bu, yanlamasına kaymayı DEĞİL, arkanın ne kadar çöktüğünü ayarlıyor (kuvvet dikey uygulanıyor). Düşük = arka daha çok çöker, drift daha dramatik görünür. Kaymayı ayarlamak için Drift Sideways Grip'i kullan.")]
     [SerializeField] private float driftGripReduction = 0.6f;
+
+    [Tooltip("Drift sırasında dönme kuvvetinin çarpanı — 'keskin dönüş' ayarı. Yükselt = araç daha hızlı döner. Çok yükseltirsen araç kendi etrafında fırıl fırıl döner.")]
     [SerializeField] private float driftSteerBoost = 1.5f;
+
+    [Tooltip("Drift'in devreye GİREBİLMESİ için gereken en düşük hız (km/h). Bunun altındayken Space'e basmak drift başlatmaz, sadece normal fren yapar.")]
     [SerializeField] private float driftMinSpeed = 15f;
+
+    [Tooltip("Drift BAŞLADIKTAN sonra, hız Drift Min Speed'in bu oranının altına düşene kadar drift bozulmaz (histerezis).\n\nNEDEN VAR: girme ve çıkma eşiği aynı olsaydı, sürekli daire çizerken araç eşiğin tam üstünde salınırdı — drift kapanır, tutuş aniden artar, araç hızlanır, drift tekrar açılır. Saniyede birkaç kez tekrarlayan bu açılıp kapanma 'takıla takıla dönme' hissi veriyordu.\n\n0.6 = 15 km/h'de drifte girer, 9 km/h'nin altına düşene kadar driftte kalır.\n1 yaparsan histerezis kapanır (eski davranış).")]
+    [Range(0.1f, 1f)]
+    [SerializeField] private float driftExitSpeedFactor = 0.6f;
+
+    [Tooltip("Drift'e girip çıkma hızı. Yükselt = Space'e basar basmaz tepki verir (daha 'kontrollü' hissettirir), düşür = yumuşak/gecikmeli geçiş.")]
     [SerializeField] private float driftTransitionSpeed = 5f;
+
+    [Tooltip("⚠️ TERS ÇALIŞIR: bu, hızın KORUNAN oranı. 0.85 = hızın %85'i korunur, %15'i kaybedilir. DAHA ÇOK yavaşlaması için bu değeri DÜŞÜR (ör. 0.70 = iki kat yavaşlama). NOT: bu fren sadece gaza basılıyken uygulanıyor.")]
     [SerializeField] private float driftSpeedLoss = 0.85f;
+
+    [Tooltip("Drift sırasında yanal tutuşun çarpanı — ASIL 'kayma' ayarı budur.\n\nNormal sürüşte yanal sürtünme Drag Coefficent (0.8) kadar. Space'e basınca o değer bu çarpanla azaltılıyor, araç yana kaymaya başlıyor.\n\nDÜŞÜR (0.5) = daha çok kayar, savrulur.\nYÜKSELT (0.85) = az kayar, raya oturmuş gibi döner.\n\n0.7 = eskiden koda gömülü olan varsayılan değer (yani 0.7'de davranış hiç değişmez).")]
+    [SerializeField] private float driftSidewaysGrip = 0.7f;
 
     private float currentDriftFactor = 0f;
     private bool isDrifting = false;
@@ -344,6 +361,56 @@ public class CarController : NetworkBehaviour
 
     private bool isCarOnIce = false;
     private bool externalIceTrigger = false;
+
+    #endregion
+
+    #region 9b. Kenarlık / Çim Sürtünmesi
+
+    [Header("Kenarlık (Curb) / Çim Sürtünmesi")]
+    [Tooltip("Buz ile AYNI desen (iceTag) — bu tag'e sahip zeminde araç daha az ivmelenir, sanki sürtünme artmış gibi hissettirir. Ice'ten farkı: kayganlaştırmıyor, sadece YAVAŞLATIYOR.")]
+    [SerializeField] private string curbTag = "Curb";
+    [Tooltip("1 = normal, 0.75 = kenarlıkta ivmenin %75'i (hafif direnç hissi).")]
+    [Range(0.1f, 1f)][SerializeField] private float curbAccelerationGrip = 0.75f;
+
+    [SerializeField] private string grassTag = "Grass";
+    [Tooltip("Çimde ivmenin ne kadarı korunur (1 = ivme hiç düşmez). YÜKSEK TUT — asıl yavaşlatmayı aşağıdaki SÜRTÜNME yapıyor. İkisi birden sert olursa araç çimde çakılıp kalıyor, piste dönemiyor.")]
+    [Range(0.1f, 1f)][SerializeField] private float grassAccelerationGrip = 0.85f;
+
+    [Tooltip("Çimde hıza ORANTILI sürtünme — gaza basmasan bile momentumu yiyor. Hıza orantılı olduğu için sabit bir ceza değil: ne kadar hızlıysan o kadar çok kaybediyorsun, yani gittikçe yavaşlıyorsun. 0 = sürtünme yok.")]
+    [SerializeField] private float grassDrag = 1.5f;
+
+    [Tooltip("Çim sürtünmesinin KESİLDİĞİ hız (km/h). Bunun altına inince sürtünme artık uygulanmıyor — araç çimde sürüne sürüne durmuyor, bu hız civarında dengeye oturuyor.")]
+    [SerializeField] private float grassDragFloorKmh = 45f;
+
+    private bool isCarOnCurb = false;
+    private bool isCarOnGrass = false;
+
+    #endregion
+
+    #region 9c. Drift Tuzağı — Geçici Yavaşlatma
+
+    // DriftTrap.cs artık süre cezası yerine burayı kullanıyor (bkz.
+    // PlayerRaceController.ApplyDriftSlowdown). Coroutine YOK — ice
+    // pattern'iyle aynı mantık: her karede "süresi doldu mu" diye
+    // Time.time karşılaştırılıyor, obje yok olursa/sahne değişirse
+    // Stop edilmesi gereken bir coroutine kalmıyor.
+    private float trapSlowdownMultiplier = 1f;
+    private float trapSlowdownEndTime = -1f;
+
+    /// <summary>
+    /// DriftTrap tuzağına yakalanınca (PlayerRaceController.ApplyDriftSlowdown
+    /// üzerinden, sadece bu arabanın SAHİBİ olan client'ta) çağrılır. Aracın
+    /// ivmesini bir süreliğine kısıyor — sert bir fren DEĞİL, "motor gücü
+    /// azaldı" hissi (aniden durursa haksız/sinir bozucu hissettirirdi).
+    /// </summary>
+    public void ApplyTrapSlowdown(float accelerationMultiplier, float duration)
+    {
+        trapSlowdownMultiplier = Mathf.Clamp01(accelerationMultiplier);
+        trapSlowdownEndTime = Time.time + duration;
+    }
+
+    private float CurrentTrapSlowdownMultiplier =>
+        Time.time < trapSlowdownEndTime ? trapSlowdownMultiplier : 1f;
 
     #endregion
 
@@ -371,8 +438,19 @@ public class CarController : NetworkBehaviour
     /// <summary>
     /// Bu arabanın girdisini bu makine mi işliyor? Normalde Mirror'ın
     /// 'isOwned' değeri, fotoğraf sahnesinde ise elle açılan bayrak.
+    ///
+    /// NEDEN netIdentity NULL KONTROLÜ VAR: Mirror'da `isOwned` doğrudan
+    /// `netIdentity.isOwned` okuyor (bkz. NetworkBehaviour.cs:68). Bu prefab
+    /// network DIŞINDA da Instantiate edilebiliyor — minimap araba marker'ı,
+    /// fotoğraf sahnesi gibi. O kopyalarda NetworkIdentity olmayınca `isOwned`
+    /// her karede NullReferenceException fırlatıyordu (Console'u dolduran,
+    /// gerçek hataları görünmez yapan bir gürültü). Network'e kayıtlı olmayan
+    /// bir kopya hiçbir zaman "kontrol bende" diyemez, o yüzden false dönmek
+    /// hem güvenli hem doğru.
     /// </summary>
-    private bool HasControl => photoStudioMode || isOwned;
+    public bool IsNetworkOwned => netIdentity != null && isOwned;
+
+    private bool HasControl => photoStudioMode || IsNetworkOwned;
 
     /// <summary>
     /// CarCameraFollow bunu okuyup takip kamerasını ağ olmadan açabiliyor.
@@ -397,13 +475,50 @@ public class CarController : NetworkBehaviour
     /// </summary>
     public void TeleportTo(Vector3 position, Quaternion rotation)
     {
-        if (!HasControl || carRB == null) return;
+        if (!HasControl || carRB == null)
+        {
+            Debug.LogWarning($"[CarController] TeleportTo çağrıldı ama HasControl={HasControl}, carRB={(carRB != null)} — ışınlama İPTAL.");
+            return;
+        }
+
+        // Işınlanmadan ÖNCE efekt üretimini kes: skidmark/duman hâlâ açıkken
+        // yer değiştirirsek eski konumla yeni konum arasına iz/partikül basılır.
+        ToggleSkidMarks(false);
+        ToggleSkidSmokes(false);
 
         carRB.linearVelocity = Vector3.zero;
         carRB.angularVelocity = Vector3.zero;
         carRB.position = position;
         carRB.rotation = rotation;
         transform.SetPositionAndRotation(position, rotation);
+
+        // Konum değiştikten SONRA temizle. TrailRenderer noktalarını DÜNYA
+        // uzayında tuttuğu için, emitting'i kapatmak eski izin silinmesine
+        // yetmiyor — hâlâ duran noktalarla yeni konum arasına bir şerit
+        // gerilir. Clear() o birikmiş noktaları atıyor, iz yeni konumdan
+        // sıfırdan başlıyor. Sıra önemli: önce taşı, sonra temizle.
+        ClearEffectTrails();
+
+        Debug.Log($"[CarController] {name} ışınlandı -> {position}");
+    }
+
+    /// <summary>
+    /// Birikmiş skidmark noktalarını ve havada duran duman partiküllerini siler.
+    /// Işınlanma sonrası "eski yerden yeni yere uzanan çizgi" artefaktını
+    /// önlemek için kullanılıyor.
+    /// </summary>
+    private void ClearEffectTrails()
+    {
+        foreach (var skidMark in skidMarks)
+        {
+            if (skidMark != null) skidMark.Clear();
+        }
+
+        foreach (var smoke in skidSmokes)
+        {
+            // true = alt (child) particle system'ler de temizlensin.
+            if (smoke != null) smoke.Clear(true);
+        }
     }
 
     /// <summary>
@@ -431,7 +546,109 @@ public class CarController : NetworkBehaviour
         // son bir kere elle kapatıyoruz, yoksa tam o anda açık kalmış bir
         // duman/iz sonsuza kadar ekranda asılı kalır.
         ToggleSkidMarks(false);
-        ToggleSkidSmokes(false, false);
+        ToggleSkidSmokes(false);
+    }
+
+    #endregion
+
+    #region İzleyici (Spectator) Modu — Arabayı Gizleme
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Yarışı bitiren oyuncunun arabası, podyum açılana kadar ortadan
+    // kalkıyor (bkz. RacerSpectator.cs). Obje YOK EDİLMİYOR — üzerindeki
+    // PlayerRaceController leaderboard/podyum sıralaması için hâlâ gerekli.
+    // Bunun yerine görüntüsü, çarpışması, fiziği ve sesi kapatılıyor.
+    //
+    // GERİ AÇARKEN NEDEN LİSTE TUTUYORUZ: prefabda BAŞTAN kapalı duran
+    // renderer/collider'lar olabilir (kapalı bir efekt, kullanılmayan bir
+    // parça). "Hepsini aç" deseydik onları da yanlışlıkla açardık. Sadece
+    // BİZİM kapattıklarımızı geri açıyoruz.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private bool hiddenForSpectator;
+    private readonly List<Renderer> spectatorHiddenRenderers = new();
+    private readonly List<Collider> spectatorDisabledColliders = new();
+
+    /// <summary>Araba şu an izleyici modu yüzünden gizli mi?</summary>
+    public bool HiddenForSpectator => hiddenForSpectator;
+
+    /// <summary>
+    /// RacerSpectator çağırır — HER client'ta (sadece owner'da değil), yoksa
+    /// araba sadece kendi ekranında kaybolur, diğerleri hayalet bir araba
+    /// görmeye devam ederdi.
+    /// </summary>
+    public void SetHiddenForSpectator(bool hidden)
+    {
+        if (hidden == hiddenForSpectator) return;
+        hiddenForSpectator = hidden;
+
+        if (hidden)
+        {
+            // Işınlanmadaki ile aynı sıra/sebep: önce efekt üretimini kes,
+            // sonra birikmiş iz/partikülleri temizle — yoksa araba görünmez
+            // olduktan sonra havada asılı kalmış bir duman/iz kalırdı.
+            ToggleSkidMarks(false);
+            ToggleSkidSmokes(false);
+            ClearEffectTrails();
+
+            spectatorHiddenRenderers.Clear();
+            foreach (Renderer r in GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == null || !r.enabled) continue;
+                r.enabled = false;
+                spectatorHiddenRenderers.Add(r);
+            }
+
+            spectatorDisabledColliders.Clear();
+            foreach (Collider c in GetComponentsInChildren<Collider>(true))
+            {
+                if (c == null || !c.enabled) continue;
+                c.enabled = false;
+                spectatorDisabledColliders.Add(c);
+            }
+
+            // isKinematic: görünmez araba yerçekimiyle haritanın altına
+            // düşmesin ya da bir yamaçtan kaymasın diye tamamen dondurulmuş
+            // olmalı. Collider'ları zaten kapattığımız için kimseye "duvar"
+            // etkisi yapmıyor (podyumdaki dondurmadan farkı bu — orada
+            // arabanın kolona DÜŞMESİ gerektiği için kinematic yapılmıyor).
+            if (carRB != null)
+            {
+                carRB.linearVelocity = Vector3.zero;
+                carRB.angularVelocity = Vector3.zero;
+                carRB.isKinematic = true;
+            }
+
+            // Motor/kayma sesi kesilsin — görünmeyen bir arabadan gelen
+            // motor sesi diğer oyuncuların kafasını karıştırırdı.
+            CarAudio audio = GetComponent<CarAudio>();
+            if (audio != null) audio.enabled = false;
+
+            foreach (AudioSource src in GetComponentsInChildren<AudioSource>(true))
+            {
+                if (src != null) src.Stop();
+            }
+        }
+        else
+        {
+            foreach (Renderer r in spectatorHiddenRenderers)
+            {
+                if (r != null) r.enabled = true;
+            }
+            spectatorHiddenRenderers.Clear();
+
+            foreach (Collider c in spectatorDisabledColliders)
+            {
+                if (c != null) c.enabled = true;
+            }
+            spectatorDisabledColliders.Clear();
+
+            if (carRB != null) carRB.isKinematic = false;
+
+            // CarAudio BİLEREK geri açılmıyor: bu noktadan sonraki tek durum
+            // podyum ve orada araba zaten donmuş halde duruyor (motor sesi
+            // olmaması doğru davranış).
+        }
     }
 
     #endregion
@@ -506,7 +723,11 @@ public class CarController : NetworkBehaviour
         // NetworkTransform'un yazdığı pozisyonla çakışıp titremeye
         // sebep olur).
         // ─────────────────────────────────────────────────────────────
-        if (!HasControl || raceEndedFrozen) return;
+        // hiddenForSpectator: yarışı bitirip izleyici moduna geçen oyuncunun
+        // arabası görünmez/çarpışmasız halde duruyor — fiziği hesaplamaya
+        // devam etmesi hem gereksiz hem tehlikeli (görünmez araba yamaçtan
+        // kayıp bambaşka bir yere gidebilirdi).
+        if (!HasControl || raceEndedFrozen || hiddenForSpectator) return;
 
         GroundCheck();
         CalculateCarVelocity();
@@ -556,7 +777,11 @@ public class CarController : NetworkBehaviour
         // sonra bile tekerler dönüyor gibi görünmesinin sebebi buydu).
         // Donma anında tekerlek/direksiyon açısı ne haldeyse öyle kalsın diye
         // bu fonksiyona hiç girmiyoruz.
-        if (raceEndedFrozen) return;
+        //
+        // hiddenForSpectator aynı sebeple burada: araba görünmezken tekerlek/
+        // duman görsellerini güncellemenin bir anlamı yok, ayrıca izleyici
+        // modundaki oyuncunun WASD'si arabayı sürmeye devam etmemeli.
+        if (raceEndedFrozen || hiddenForSpectator) return;
 
         if (HasControl)
         {
@@ -634,8 +859,18 @@ public class CarController : NetworkBehaviour
             speedLimiter = 0f;
 
         float currentAcceleration = acceleration;
+
+        // Buz/kenarlık/çim BİRBİRİNİ dışlıyor (bkz. Suspension() — tekerlek
+        // aynı anda ikisine birden basamaz), o yüzden else-if zinciri yeterli.
         if (isCarOnIce)
             currentAcceleration *= iceAccelerationGrip;
+        else if (isCarOnGrass)
+            currentAcceleration *= grassAccelerationGrip;
+        else if (isCarOnCurb)
+            currentAcceleration *= curbAccelerationGrip;
+
+        // Drift tuzağı cezası — yüzeyden BAĞIMSIZ, üstüne çarpan olarak biniyor.
+        currentAcceleration *= CurrentTrapSlowdownMultiplier;
 
         if (Mathf.Abs(moveInput) > 0.01f)
         {
@@ -692,7 +927,7 @@ public class CarController : NetworkBehaviour
         if (isCarOnIce)
             dragCoefficient = iceSidewaysDrag;
         else if (isDrifting)
-            dragCoefficient = dragCoefficent * 0.7f;
+            dragCoefficient = dragCoefficent * driftSidewaysGrip;
         else if (Mathf.Abs(moveInput) < 0.1f || Mathf.Sign(moveInput) != Mathf.Sign(carVelocityRatio))
             dragCoefficient = brakingDragCoefficent;
         else
@@ -705,7 +940,13 @@ public class CarController : NetworkBehaviour
 
     private void ArcadeDrift()
     {
-        bool wantsToDrift = isHandbrakePressed && currentSpeed > driftMinSpeed;
+        // HİSTEREZİS: drifte girmek için driftMinSpeed gerekiyor, ama ZATEN
+        // driftteyken çıkmak için daha düşük bir hıza inmek gerekiyor. Tek
+        // eşik olsaydı araç sınırda salınır, yanal tutuş sürekli 0.56 ↔ 0.8
+        // arasında zıplar ve sürekli daire çizerken "takıla takıla" dönerdi.
+        float requiredSpeed = isDrifting ? driftMinSpeed * driftExitSpeedFactor : driftMinSpeed;
+
+        bool wantsToDrift = isHandbrakePressed && currentSpeed > requiredSpeed;
         float targetDrift = wantsToDrift ? 1f : 0f;
         currentDriftFactor = Mathf.Lerp(currentDriftFactor, targetDrift, Time.fixedDeltaTime * driftTransitionSpeed);
         isDrifting = currentDriftFactor > 0.05f;
@@ -741,6 +982,16 @@ public class CarController : NetworkBehaviour
                     float currentLowSpeedDrag = lowSpeedDragMultiplier;
                     baseDrag += currentLowSpeedDrag * lowSpeedFactor;
                 }
+
+                // ÇİM SÜRTÜNMESİ: aşağıdaki AddForce zaten kuvveti hıza
+                // (linearVelocity) çarptığı için bu sabit bir fren değil —
+                // hızlıyken çok, yavaşlarken az yavaşlatıyor, yani araç
+                // gittikçe yavaşlıyor. ALT SINIR şart: olmasaydı sürtünme
+                // aracı çimde sürüne sürüne durdurur, oyuncu piste geri
+                // dönemezdi. Bu sınırın altında sürtünme kesiliyor ve araç
+                // o hız civarında dengeye oturuyor.
+                if (isCarOnGrass && currentSpeed > grassDragFloorKmh)
+                    baseDrag += grassDrag;
 
                 carRB.AddForce(-carRB.linearVelocity * baseDrag, ForceMode.Acceleration);
             }
@@ -808,49 +1059,21 @@ public class CarController : NetworkBehaviour
 
     private void Vfx()
     {
-        // Karar (latch'li) artık FixedUpdate'te hesaplanıyor — bkz. shouldShowEffects
-        // ve netShouldShowEffects. Owner için orada güncelleniyor, remote client'lar
-        // için OnShouldShowEffectsChanged hook'u ile geliyor. İkisi de AYNI ANDA
-        // tetikleniyor — kısa el freni darbelerinin bile garanti görünmesi
-        // gerektiği için (bkz. skidEffectMinVisibleDuration) burada bir "duman
-        // gecikmesi" YOK: kısa bir gecikme denendi ama darbe süresi gecikmeden
-        // kısa kaldığında dumanın HİÇ tetiklenmemesine sebep oluyordu (bug,
-        // geri alındı). Doğal "duman biraz sonra yükseliyor" hissi istenirse
-        // bunu particle'ın KENDİ Size/Opacity over Lifetime eğrisiyle (aşağıda
-        // açıklandı) yapmak gerekiyor, açma/kapama zamanlamasıyla değil.
-        // Efekt YENİ başladıysa (önceki karede kapalıydı, şimdi açık) burada
-        // yakalanıyor — ToggleSkidSmokes bunu, Rate Over Time'ın şansına
-        // bırakmadan garanti bir parçacık patlaması üretmek için kullanıyor.
-        bool justStarted = shouldShowEffects && !wasShowingEffects;
-        wasShowingEffects = shouldShowEffects;
-
+        // Karar (latch'li) dünden beri FixedUpdate'te hesaplanıyor — bkz.
+        // shouldShowEffects ve netShouldShowEffects. Owner için orada
+        // güncelleniyor, remote client'lar için OnShouldShowEffectsChanged
+        // hook'u ile geliyor. İkisi de AYNI ANDA, aynı değerle tetikleniyor.
+        //
+        // NOT: Bugün burada denenen ekstra "duman gecikmesi" / "patlama
+        // (Emit)" / "kapanma toleransı" mantığı GERİ ALINDI — asıl sebep
+        // particle'ın Max Particles (300) sınırına takılması + Start
+        // Lifetime'ın SABİT olması (aynı anda üretilen parçacıklar aynı
+        // anda ölüyor) olduğu ortaya çıktı. Gerçek çözüm particle
+        // ayarlarında (Max Particles artırmak / Start Lifetime'ı rastgele
+        // bir aralığa çevirmek), tetikleme kodunda değil.
         ToggleSkidMarks(shouldShowEffects);
-
-        // Duman, shouldShowEffects false OLDUKTAN SONRA da bir süre daha
-        // "açık" tutuluyor (Stop() hemen çağrılmıyor). NEDEN: sürekli bir
-        // drift sırasında ham koşul (currentCarLocalVelocity.x eşiği vb.)
-        // çok kısa anlarla false'a düşüp tekrar true olabiliyor — her
-        // false'ta Stop() çağrılırsa duman görünür şekilde "kesilip" tekrar
-        // patlıyormuş gibi hissettiriyordu (skidmark'ta bu sorun yok çünkü
-        // TrailRenderer durunca bile eski iz duruyor, duman gerçekten
-        // kesiliyor). Bu tolerans SADECE ne zaman Stop() çağrılacağını
-        // geciktiriyor, ne zaman patlama (Emit) tetikleneceğini DEĞİL —
-        // justStarted hâlâ ham shouldShowEffects geçişinden hesaplanıyor.
-        smokeStopHoldTimer = shouldShowEffects
-            ? smokeStopHoldDuration
-            : Mathf.Max(0f, smokeStopHoldTimer - Time.deltaTime);
-
-        bool smokeShouldPlay = shouldShowEffects || smokeStopHoldTimer > 0f;
-        ToggleSkidSmokes(smokeShouldPlay, justStarted);
+        ToggleSkidSmokes(shouldShowEffects);
     }
-
-    private bool wasShowingEffects;
-    [Tooltip("Efekt başladığı AN, Rate Over Time'ı beklemeden garanti üretilecek parçacık sayısı — kısa el freni darbelerinde bile duman şansa bırakılmadan görünsün diye.")]
-    [SerializeField] private int smokeBurstCount = 10;
-
-    private float smokeStopHoldTimer;
-    [Tooltip("shouldShowEffects false olduktan sonra duman Stop() çağrılmadan önce beklenecek ekstra süre — sürekli drift içindeki çok kısa doğal kesintilerde dumanın görünür şekilde kesilip yeniden patlamasını önler.")]
-    [SerializeField] private float smokeStopHoldDuration = 0.3f;
 
     private void ToggleSkidMarks(bool toggle)
     {
@@ -860,24 +1083,20 @@ public class CarController : NetworkBehaviour
         }
     }
 
-    private void ToggleSkidSmokes(bool toggle, bool burstOnStart)
+    private void ToggleSkidSmokes(bool toggle)
     {
+        // isPlaying DEĞİL isEmitting kontrol ediliyor — isPlaying, Stop()
+        // çağrılsa bile ortada henüz ölmemiş (fade-out'taki) eski partiküller
+        // varken true dönmeye devam ediyor. Bu yüzden yeni bir drift, eski
+        // dumanın kuyruğu tamamen sönene kadar Play() ile hiç yeniden
+        // tetiklenmiyordu. isEmitting, Stop() çağrılır çağrılmaz anında false
+        // oluyor — istediğimiz davranış bu.
         foreach (var smoke in skidSmokes)
         {
-            if (smoke == null) continue;
-
-            if (toggle)
+            if (smoke != null)
             {
-                if (!smoke.isPlaying) smoke.Play();
-                // Rate Over Time'ın "şansına" bırakmadan, efekt başladığı anda
-                // birkaç parçacığı doğrudan üretiyoruz — çok kısa açık kalma
-                // pencerelerinde bile (örn. skidEffectMinVisibleDuration kadar)
-                // en az bu kadar parçacık GARANTİ görünür.
-                if (burstOnStart) smoke.Emit(smokeBurstCount);
-            }
-            else
-            {
-                if (smoke.isPlaying) smoke.Stop();
+                if (toggle) { if (!smoke.isEmitting) smoke.Play(); }
+                else { if (smoke.isEmitting) smoke.Stop(); }
             }
         }
     }
@@ -911,6 +1130,8 @@ public class CarController : NetworkBehaviour
     private void Suspension()
     {
         int wheelsOnIceCount = 0;
+        int wheelsOnCurbCount = 0;
+        int wheelsOnGrassCount = 0;
 
         for (int i = 0; i < rayPoints.Length; i++)
         {
@@ -920,7 +1141,13 @@ public class CarController : NetworkBehaviour
             if (Physics.Raycast(rayPoints[i].position, -rayPoints[i].up, out hit, maxLength + wheelRadius, drivable))
             {
                 wheelsIsGrounded[i] = 1;
+
+                // Bir collider'ın tag'i tek olduğu için bu üçü doğal olarak
+                // birbirini dışlıyor — aynı tekerlek aynı anda hem Ice hem
+                // Curb hem Grass sayılamaz.
                 if (hit.collider.CompareTag(iceTag)) wheelsOnIceCount++;
+                else if (hit.collider.CompareTag(grassTag)) wheelsOnGrassCount++;
+                else if (hit.collider.CompareTag(curbTag)) wheelsOnCurbCount++;
 
                 float currentSpringLenght = hit.distance - wheelRadius;
                 float springCompression = (restLength - currentSpringLenght) / springTravel;
@@ -945,6 +1172,8 @@ public class CarController : NetworkBehaviour
         }
 
         isCarOnIce = (wheelsOnIceCount > 0) || externalIceTrigger;
+        isCarOnGrass = wheelsOnGrassCount > 0;
+        isCarOnCurb = wheelsOnCurbCount > 0;
     }
 
     #endregion
@@ -961,6 +1190,50 @@ public class CarController : NetworkBehaviour
     {
         return isDrifting;
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // SES SİSTEMİ İÇİN OKUMA ERİŞİMLERİ (CarAudio.cs kullanıyor)
+    //
+    // ÖNEMLİ: Üçü de HEM owner'da HEM remote'ta doğru değeri veriyor —
+    // dayandıkları alanlar (carVelocityRatio, shouldShowEffects, isGrounded)
+    // zaten SyncVar ile senkronize edilip Update()'te remote arabalara
+    // kopyalanıyor (bkz. Update() içindeki "else" bloğu). Bu sayede motor
+    // sesi ve lastik cızırtısı BAŞKA oyuncuların arabalarında da doğru
+    // çalışıyor, ekstra network mesajı gerekmiyor.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Aracın KM/H cinsinden hızı — HUD, motor sesi ve hıza bağlı FOV için
+    /// kullanılması gereken değer budur.
+    ///
+    /// ⚠️ NEDEN SpeedRatio DEĞİL DE BU: `carVelocityRatio` isminin aksine
+    /// 0-1 aralığında DEĞİL. Hesabı `localVelocity.z / maxSpeed` ve burada
+    /// birimler karışıyor — pay METRE/SANİYE, payda ise KM/H (maxSpeed 300
+    /// bir km/h değeri, hız sınırı `currentSpeed >= maxSpeed` şeklinde
+    /// km/h ile karşılaştırılıyor). Sonuç: araç tam 300 km/h'deyken bile
+    /// carVelocityRatio ancak ~0.28 oluyor, asla 1'e ulaşmıyor.
+    ///
+    /// Bu oranı doğrudan "yüzde kaç hızlıyız" diye kullanan her şey (motor
+    /// sesi perdesi, FOV) hep %28'de takılı kalırdı. Bu property birimi
+    /// düzeltip gerçek km/h veriyor: ratio × maxSpeed = m/s, ×3.6 = km/h.
+    ///
+    /// carVelocityRatio senkronize edildiği için bu değer hem owner'da hem
+    /// remote arabalarda doğru çalışıyor.
+    /// </summary>
+    public float SpeedKmh => Mathf.Abs(carVelocityRatio) * maxSpeed * 3.6f;
+
+    /// <summary>
+    /// Ham hız oranı (0 = duruyor). ⚠️ 1'e ULAŞMAZ — bkz. SpeedKmh
+    /// açıklaması. Yeni kodda SpeedKmh kullan, bu sadece geriye dönük
+    /// uyumluluk için duruyor.
+    /// </summary>
+    public float SpeedRatio => Mathf.Clamp01(Mathf.Abs(carVelocityRatio));
+
+    /// <summary>Şu an lastik izi/duman efekti gösteriliyor mu — lastik cızırtısı sesi bununla aynı anda çalıyor.</summary>
+    public bool IsSkidding => shouldShowEffects;
+
+    /// <summary>Araba yerde mi (havadayken motor sesi boşta gaz gibi yükselmesin diye).</summary>
+    public bool IsGroundedNow => isGrounded;
 
     #endregion
 }

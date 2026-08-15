@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 1356680096418970876}
   - component: {fileID: 6389293460842274909}
   - component: {fileID: 1519694301959161758}
+  - component: {fileID: 85245783611660214}
   m_Layer: 0
   m_Name: CarCam
   m_TagString: Player
@@ -90,8 +91,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 625c14eee3ad46c99df7c7c891ef668a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Cinemachine::Unity.Cinemachine.CinemachineThirdPersonFollow
-  Damping: {x: 0.5, y: 0.5, z: 0.5}
-  ShoulderOffset: {x: 0, y: 4, z: -12}
+  Damping: {x: 0.5, y: 0.5, z: 0.1}
+  ShoulderOffset: {x: 0, y: 5, z: -12}
   VerticalArmLength: 1
   CameraSide: 1
   CameraDistance: 4
@@ -139,6 +140,23 @@ MonoBehaviour:
   frequency: 22
   decayPerSecond: 2
   showDebugLogs: 1
+--- !u!114 &85245783611660214
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 101126786422396866}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f854a7fcfa8ca2943be46611d5db01a2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraSpeedFov
+  baseFov: 60
+  maxFov: 78
+  speedForMaxFov: 180
+  smoothing: 2.5
+  fovCurvePower: 1.6
 --- !u!1 &155675032606782965
 GameObject:
   m_ObjectHideFlags: 0
@@ -318,7 +336,7 @@ Transform:
   m_GameObject: {fileID: 2146044698475601497}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.5, y: 0.2, z: -0.65999997}
+  m_LocalPosition: {x: -0.5, y: 0.2, z: -1.099}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -332,7 +350,7 @@ ParticleSystem:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2146044698475601497}
   serializedVersion: 8
-  lengthInSec: 1
+  lengthInSec: 10
   simulationSpeed: 1
   stopAction: 0
   cullingMode: 3
@@ -460,7 +478,7 @@ ParticleSystem:
     startSpeed:
       serializedVersion: 2
       minMaxState: 0
-      scalar: 0
+      scalar: 1
       minScalar: 5
       maxCurve:
         serializedVersion: 2
@@ -895,7 +913,7 @@ ParticleSystem:
         m_RotationOrder: 4
     randomizeRotationDirection: 0
     gravitySource: 0
-    maxNumParticles: 300
+    maxNumParticles: 1000
     customEmitterVelocity: {x: 0, y: 0, z: 0}
     size3D: 0
     rotation3D: 0
@@ -1286,8 +1304,8 @@ ParticleSystem:
           inWeight: 0.33333334
           outWeight: 0.33333334
         - serializedVersion: 3
-          time: 0.08259149
-          value: 0.84993637
+          time: 0.1326561
+          value: 0.9282074
           inSlope: 1.3083873
           outSlope: 1.3083873
           tangentMode: 0
@@ -5384,6 +5402,10 @@ GameObject:
   - component: {fileID: 4490114615830032202}
   - component: {fileID: 6313625600349125531}
   - component: {fileID: 6020618234517215157}
+  - component: {fileID: 1779611600698297959}
+  - component: {fileID: 7789937855272722457}
+  - component: {fileID: 1042953788731585510}
+  - component: {fileID: 4136076264132882420}
   m_Layer: 0
   m_Name: Car
   m_TagString: Player
@@ -5486,8 +5508,8 @@ MonoBehaviour:
   restLength: 0.75
   springTravel: 0.1
   wheelRadius: 0.6
-  acceleration: 15
-  maxSpeed: 180
+  acceleration: 20
+  maxSpeed: 220
   deceleration: 10
   steerStrength: 30
   turningCurve:
@@ -5537,15 +5559,23 @@ MonoBehaviour:
   minSideSkidVelocity: 8
   airDrag: 0.1
   rollingResistance: 0.5
-  driftGripReduction: 0.6
-  driftSteerBoost: 1.5
-  driftMinSpeed: 15
-  driftTransitionSpeed: 5
-  driftSpeedLoss: 0.85
+  driftGripReduction: 0.75
+  driftSteerBoost: 1.8
+  driftMinSpeed: 10
+  driftExitSpeedFactor: 0.6
+  driftTransitionSpeed: 10
+  driftSpeedLoss: 0.7
+  driftSidewaysGrip: 0.5
   iceTag: Ice
   iceSidewaysDrag: 0.05
   iceSteeringChaosMultiplier: 1.5
   iceAccelerationGrip: 0.3
+  curbTag: Curb
+  curbAccelerationGrip: 0.75
+  grassTag: Grass
+  grassAccelerationGrip: 0.85
+  grassDrag: 0.5
+  grassDragFloorKmh: 150
   coastingBrakeStrength: 35
   minSpeedForCoastingBrake: 5
   photoStudioMode: 0
@@ -5569,6 +5599,11 @@ MonoBehaviour:
   CheckpointInfo: {fileID: 0}
   TotalTimeText: {fileID: 0}
   LastLapTimeText: {fileID: 0}
+  checkpointClip: {fileID: 0}
+  checkpointVolume: 0.3
+  lapCompleteClip: {fileID: 8300000, guid: 2ff348a0053c44041ae64613a88164c5, type: 3}
+  penaltyClip: {fileID: 8300000, guid: d71db967d89bff7419e37ef618f7c8b9, type: 3}
+  raceSfxVolume: 0.5
 --- !u!114 &4490114615830032202
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5582,7 +5617,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Mirror::Mirror.NetworkIdentity
   sceneId: 0
-  _assetId: 1315678393
+  _assetId: 0
   serverOnly: 0
   visibility: 0
   hasSpawned: 0
@@ -5636,6 +5671,105 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   carCam: {fileID: 101126786422396866}
+--- !u!114 &1779611600698297959
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a16600c91eee57942a6f322e473d684a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarAudio
+  engineLoop: {fileID: 8300000, guid: 1e686a05fbb38854893444d2af594ee3, type: 3}
+  idlePitch: 0.75
+  maxPitch: 2.2
+  idleVolume: 0.1
+  maxVolume: 0.5
+  volumeRamp: 2
+  speedForMaxPitch: 220
+  pitchSmoothing: 6
+  skidLoop: {fileID: 0}
+  skidVolume: 0.6
+  skidFadeSpeed: 8
+  crashClips:
+  - {fileID: 8300000, guid: 462bfdb734804f645a7b20c3db0cf54a, type: 3}
+  minCrashSpeed: 6
+  loudCrashSpeed: 22
+  crashVolume: 0.9
+  crashCooldown: 0.25
+  crashOnlyForOwnCar: 0
+  landingClip: {fileID: 0}
+  landingVolume: 0.7
+  minAirTimeForLanding: 0.35
+--- !u!114 &7789937855272722457
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4a37123e93718b242884be44f212ad35, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CheckpointRecovery
+  maxDistanceFromTrack: 60
+  sustainedSeconds: 2
+  checkInterval: 0.5
+  detectSkippedCheckpoints: 1
+  gateWidth: 60
+  gateDepth: 90
+  skipMargin: 8
+  confirmDelay: 1.5
+  fadeDuration: 0.4
+  holdSeconds: 0.2
+  spawnHeightOffset: -3
+--- !u!114 &1042953788731585510
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ebba5197889e2084bbe52b8f2e985c43, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RacerCursorLock
+  lockCursorWhileRacing: 1
+--- !u!114 &4136076264132882420
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4208924874971661575}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6656f09102e2c1741a66511d15e75b51, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RacerSpectator
+  enableSpectatorMode: 1
+  moveSpeed: 30
+  fastMoveSpeed: 75
+  verticalSpeed: 20
+  accelerationTime: 0.15
+  scrollSpeedRange: 4
+  minPitch: -85
+  maxPitch: 85
+  lookSmoothing: 25
+  autoBoundsFromTrack: 1
+  horizontalPadding: 60
+  manualHorizontalRadius: 300
+  minHeight: 4
+  maxHeight: 160
+  enterMessage: "Yar\u0131\u015F\u0131 bitirdin! Di\u011Fer yar\u0131\u015F\xE7\u0131lar
+    bekleniyor.\n\u0130ZLEY\u0130C\u0130 MODU \u2014 WASD: hareket \xB7 Fare: bak
+    \xB7 Space/Ctrl: y\xFCksel/al\xE7al \xB7 Shift: h\u0131zl\u0131"
+  enterMessageSeconds: 6
 --- !u!1 &4378018966892394989
 GameObject:
   m_ObjectHideFlags: 0
@@ -6500,7 +6634,7 @@ Transform:
   m_GameObject: {fileID: 9161872094560019810}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.5, y: 0.2, z: -0.65999997}
+  m_LocalPosition: {x: 0.5, y: 0.2, z: -1.099}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -6514,7 +6648,7 @@ ParticleSystem:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 9161872094560019810}
   serializedVersion: 8
-  lengthInSec: 1
+  lengthInSec: 10
   simulationSpeed: 1
   stopAction: 0
   cullingMode: 3
@@ -6642,7 +6776,7 @@ ParticleSystem:
     startSpeed:
       serializedVersion: 2
       minMaxState: 0
-      scalar: 0
+      scalar: 1
       minScalar: 5
       maxCurve:
         serializedVersion: 2
@@ -7077,7 +7211,7 @@ ParticleSystem:
         m_RotationOrder: 4
     randomizeRotationDirection: 0
     gravitySource: 0
-    maxNumParticles: 300
+    maxNumParticles: 1000
     customEmitterVelocity: {x: 0, y: 0, z: 0}
     size3D: 0
     rotation3D: 0
@@ -7468,8 +7602,8 @@ ParticleSystem:
           inWeight: 0.33333334
           outWeight: 0.33333334
         - serializedVersion: 3
-          time: 0.08259149
-          value: 0.84993637
+          time: 0.1326561
+          value: 0.9282074
           inSlope: 1.3083873
           outSlope: 1.3083873
           tangentMode: 0

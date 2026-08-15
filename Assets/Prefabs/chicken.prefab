@@ -47,8 +47,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af7ea0fd79fd6654ab5d6dab19bf190e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Chicken
-  maxMoveSpeed: 15
-  minMoveSpeed: 10
+  maxMoveSpeed: 100
+  minMoveSpeed: 40
   rotationSpeed: 5
   slowDownStartDistance: 200
   slowDownEndDistance: 20
@@ -104,7 +104,7 @@ CapsuleCollider:
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
   m_ProvidesContacts: 0
-  m_Enabled: 0
+  m_Enabled: 1
   serializedVersion: 2
   m_Radius: 2
   m_Height: 6

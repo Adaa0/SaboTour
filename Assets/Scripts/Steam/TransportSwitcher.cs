@@ -44,6 +44,13 @@ public class TransportSwitcher : MonoBehaviour
              "sahneyi kaydetmeyi unutma.")]
     [SerializeField] private TransportMode mode = TransportMode.Kcp;
 
+    /// <summary>
+    /// Steam transport'u mu seçili? SteamLobbyManager bunu okuyup, KCP
+    /// modunda yanlışlıkla Steam lobisi kurmasını engelliyor (build almadan
+    /// önce Mode'u Steam'e çevirmeyi unutmak bilinen bir tuzak).
+    /// </summary>
+    public bool IsSteamMode => mode == TransportMode.Steam;
+
     [Header("Referanslar")]
     [Tooltip("KcpTransport component'i — localhost:7777 ile bağlanılan.")]
     [SerializeField] private Transport kcpTransport;
@@ -75,6 +82,11 @@ public class TransportSwitcher : MonoBehaviour
         chosen.enabled = true;
         nm.transport = chosen;
         if (other != null) other.enabled = false;
+
+        // Steam modunda sol üstteki KCP debug butonları (Host/Client/Server) gereksiz
+        // ve grili görünüyor — lobi sistemi zaten kendi UI'ını kullanıyor, HUD kapatılıyor.
+        NetworkManagerHUD hud = GetComponent<NetworkManagerHUD>();
+        if (hud != null) hud.enabled = !useSteam;
 
         Debug.Log($"[TransportSwitcher] Aktif transport: {mode} ({chosen.GetType().Name})");
     }

@@ -59,7 +59,14 @@ public class FrameRateLimiter : MonoBehaviour
              "karıştırır. Gerçek ölçümü her zaman build'de yap.")]
     [SerializeField] private bool applyInEditor = false;
 
-    private static FrameRateLimiter instance;
+    private const string PrefKeyMode = "Settings_FpsMode";
+    private const string PrefKeyTarget = "Settings_FpsTarget";
+
+    /// <summary>Ayarlar menüsünün mevcut FPS ayarını okuyup değiştirebilmesi için.</summary>
+    public static FrameRateLimiter Instance { get; private set; }
+
+    public Mode CurrentMode => mode;
+    public int CurrentTargetFrameRate => targetFrameRate;
 
     void Awake()
     {
@@ -67,14 +74,23 @@ public class FrameRateLimiter : MonoBehaviour
         // Online Scene'e eklendiyse) yenisi kendini siliyor.
         if (dontDestroyOnLoad)
         {
-            if (instance != null && instance != this)
+            if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
                 return;
             }
 
-            instance = this;
             DontDestroyOnLoad(gameObject);
+        }
+
+        Instance = this;
+
+        // Ayarlar menüsünden daha önce kaydedilmiş bir tercih varsa (oyuncu
+        // önceki oturumda değiştirdiyse) Inspector'daki varsayılanın yerine geçer.
+        if (PlayerPrefs.HasKey(PrefKeyMode))
+        {
+            mode = (Mode)PlayerPrefs.GetInt(PrefKeyMode);
+            targetFrameRate = PlayerPrefs.GetInt(PrefKeyTarget, targetFrameRate);
         }
 
         Apply();
@@ -120,12 +136,17 @@ public class FrameRateLimiter : MonoBehaviour
 
     /// <summary>
     /// Ayarlar menüsü için hazır giriş noktası — modu ve FPS'i dışarıdan
-    /// değiştirip anında uygular.
+    /// değiştirip anında uygular ve PlayerPrefs'e kaydeder (bir sonraki
+    /// oturumda da hatırlanır).
     /// </summary>
     public void Apply(Mode newMode, int newTargetFrameRate)
     {
         mode = newMode;
         targetFrameRate = Mathf.Clamp(newTargetFrameRate, 30, 300);
+
+        PlayerPrefs.SetInt(PrefKeyMode, (int)mode);
+        PlayerPrefs.SetInt(PrefKeyTarget, targetFrameRate);
+
         Apply();
     }
 }

@@ -10,14 +10,7 @@ public class CheckpointManager : MonoBehaviour
     void Start()
     {
         LoadCheckpoints();
-
-        // NOT: Önceden bu dinleyici sadece checkpoints.Count == 0 iken
-        // ekleniyordu — yani ilk yükleme başarılı olursa (çoğu zaman öyle
-        // oluyor) bir daha ASLA yeni bir track üretimini dinlemiyordu. Bu,
-        // pist herhangi bir sebeple ikinci kez üretildiğinde (ör. eski bir
-        // host-mode SyncVar hook çift-tetikleme hatası) elimizde YOK EDİLMİŞ
-        // checkpoint referansları kalmasına sebep oluyordu ("hayalet" liste,
-        // Count doğru ama her eleman null). Artık her zaman dinliyoruz.
+        
         TrackGenerator trackGenerator = FindAnyObjectByType<TrackGenerator>();
         if (trackGenerator != null)
             trackGenerator.onTrackGenerated.AddListener(LoadCheckpoints);

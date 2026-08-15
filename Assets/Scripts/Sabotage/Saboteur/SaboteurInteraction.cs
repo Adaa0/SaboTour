@@ -29,6 +29,26 @@ public class SaboteurInteraction : NetworkBehaviour
     [Tooltip("Butonlara/checkpoint marker'lara ne kadar uzaktan tıklanabilsin (metre). Oda büyüdükçe bunu artır.")]
     [SerializeField] private float interactionRange = 8f;
 
+    // ─── SESLER ──────────────────────────────────────────────────────────
+    // Tıklama sesleri LOCAL çalıyor (network'e gitmiyor) — çünkü bunlar
+    // sabotajcının kendi elinin altındaki fiziksel butonların sesi, odanın
+    // dışından kimse duymuyor zaten. Yarışçılara ulaşması gereken sesler
+    // (tuzak kuruldu, bomba fırlatıldı) ilgili skill dosyalarında ClientRpc
+    // ile çalınıyor.
+    //
+    // 3D (PlayAt) tercih edildi, 2D değil: butonların odadaki konumu belli,
+    // sağdaki butona basınca ses sağdan gelsin diye.
+    [Header("Sesler (sadece sabotajcının kendi odasında duyulur)")]
+    [Tooltip("3 skil butonundan birine tıklayınca çalan seçim sesi.")]
+    [SerializeField] private AudioClip skillSelectClip;
+    [Tooltip("Minimap'te bir checkpoint marker'ına tıklayınca çalan seçim sesi.")]
+    [SerializeField] private AudioClip checkpointSelectClip;
+    [Tooltip("Ortadaki büyük kırmızı tetik butonuna basınca çalan mekanik klik/kolu çekme sesi.")]
+    [SerializeField] private AudioClip triggerClip;
+    [Tooltip("Skil cooldown'daysa (henüz hazır değilse) çalan olumsuz 'çalışmadı' sesi. Oyuncunun neden bir şey olmadığını anlaması için ÖNEMLİ — şu an sadece Console'a yazı düşüyor, oyuncu hiçbir geri bildirim almıyor.")]
+    [SerializeField] private AudioClip deniedClip;
+    [Range(0f, 1f)][SerializeField] private float interactionVolume = 0.85f;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = true;
 
@@ -72,6 +92,7 @@ public class SaboteurInteraction : NetworkBehaviour
         {
             armedSkill = skillButton.skill;
             GetFeedback(hitCollider).PlayPress();
+            SfxPlayer.PlayAt(skillSelectClip, hit.point, interactionVolume, 0.04f, 3f, 25f);
             if (showDebugLogs) Debug.Log($"[SaboteurInteraction] Skil seçildi: {armedSkill}");
             return;
         }
@@ -80,6 +101,7 @@ public class SaboteurInteraction : NetworkBehaviour
         {
             selectedCheckpoint = marker.checkpointIndex;
             GetFeedback(hitCollider).PlayPress();
+            SfxPlayer.PlayAt(checkpointSelectClip, hit.point, interactionVolume, 0.04f, 3f, 25f);
 
             if (selectedMarker != null) selectedMarker.SetSelected(false);
             selectedMarker = marker;
@@ -97,10 +119,12 @@ public class SaboteurInteraction : NetworkBehaviour
             if (selectedCheckpoint < 0)
             {
                 Debug.LogWarning("[SaboteurInteraction] Önce minimap'ten bir checkpoint seç, sonra tetikle!");
+                SfxPlayer.PlayAt(deniedClip, hit.point, interactionVolume, 0f, 3f, 25f);
                 return;
             }
 
             GetFeedback(hitCollider).PlayPress();
+            SfxPlayer.PlayAt(triggerClip, hit.point, interactionVolume, 0.03f, 3f, 25f);
             if (showDebugLogs) Debug.Log($"[SaboteurInteraction] Tetikleniyor: {armedSkill} → checkpoint {selectedCheckpoint}");
             CmdActivateSkill(armedSkill);
         }
@@ -195,6 +219,20 @@ public class SaboteurInteraction : NetworkBehaviour
         }
 
         TargetLog(success ? $"{skill} AKTİF!" : $"{skill} henüz hazır değil (cooldown'da).");
+
+        // Başarısızlığın SESLİ geri bildirimi. Cooldown kararı SERVER'da
+        // veriliyor (yukarıdaki ActivateSkill çağrıları), bu yüzden sabotajcı
+        // butona basarken henüz hazır olup olmadığını bilmiyor — sonucu
+        // öğrenmenin tek yolu server'ın cevabı. TargetRpc, Mirror'da sadece
+        // bu objenin sahibi olan client'ta çalışır, yani sesi yalnızca
+        // sabotajcı duyar.
+        if (!success) TargetPlayDenied();
+    }
+
+    [TargetRpc]
+    private void TargetPlayDenied()
+    {
+        SfxPlayer.PlayUI(deniedClip, interactionVolume);
     }
 
     /// <summary>

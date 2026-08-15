@@ -24,7 +24,16 @@ public class DriftTrap : NetworkBehaviour
 {
     [Header("Drift Trap Ayarları")]
     [SerializeField] private float entryWindowSeconds = 10f;
-    [SerializeField] private float penaltyMultiplier = 2f;
+
+    [Header("Yavaşlatma Cezası")]
+    [Tooltip("Yakalanınca arabanın ivmesi bu orana düşer (1 = normal, 0.5 = motor gücünün yarısı). Aracı komple durdurmuyoruz — sert/haksız hissettirmesin diye.")]
+    [Range(0.1f, 1f)][SerializeField] private float slowdownAccelerationMultiplier = 0.5f;
+    [Tooltip("Ne kadar uzun drift ettiyse ceza da o kadar uzun sürsün — her 1 saniyelik drift, kaç saniye yavaşlatma cezası eklesin.")]
+    [SerializeField] private float slowdownSecondsPerDriftSecond = 1f;
+    [Tooltip("Az bir drift bile (ör. 0.2s) fark edilir bir ceza versin diye alt sınır.")]
+    [SerializeField] private float minSlowdownDuration = 1.5f;
+    [Tooltip("Çok uzun drift edilse bile cezanın sonsuza uzamaması için üst sınır.")]
+    [SerializeField] private float maxSlowdownDuration = 4f;
 
     [Header("Cooldown")]
     [Tooltip("Tuzak kurulduktan sonra bu skilin tekrar kullanılabilir olması için beklenmesi gereken süre (entryWindowSeconds'tan bağımsız).")]
@@ -34,6 +43,11 @@ public class DriftTrap : NetworkBehaviour
     [Tooltip("Eskiden CheckpointSpawner'da kullanılan kırmızı ok prefabı (Assets/Prefabs/Ok.prefab). Seçilen checkpoint'in üzerinde belirir.")]
     [SerializeField] private GameObject checkpointArrowPrefab;
     [SerializeField] private float arrowHeightOffset = 3f;
+
+    [Header("Ses")]
+    [Tooltip("Tuzak kurulduğu anda, HEDEF CHECKPOINT'İN KONUMUNDA çalar. Herkes duyar — yakındaki yarışçı 'burada bir şey oldu' diye uyarılsın, sabotajcı da uzaktan kısık bir onay sesi alsın diye. Uğursuz/mekanik bir kurulma sesi olmalı.")]
+    [SerializeField] private AudioClip trapArmedClip;
+    [Range(0f, 1f)][SerializeField] private float trapArmedVolume = 0.9f;
 
     [Header("Debug")]
     [SerializeField] private bool showDebugLogs = true;
@@ -149,6 +163,7 @@ public class DriftTrap : NetworkBehaviour
         trackedCars.Clear();
 
         RpcClearCheckpointArrow();
+        RpcPlayTrapArmedSound(trapCheckpointIndex);
 
         int nextIndex = (trapCheckpointIndex + 1) % checkpointManager.checkpoints.Count;
 
@@ -194,6 +209,26 @@ public class DriftTrap : NetworkBehaviour
     {
         if (arrowInstance != null)
             arrowInstance.SetActive(false);
+    }
+
+    /// <summary>
+    /// Tuzağın kurulduğu sesi HER client'ta, tuzağın kurulduğu checkpoint'in
+    /// konumunda çalar.
+    ///
+    /// NEDEN AYRI BİR ClientRpc (ses doğrudan ActivateTrap'te çalınamaz mı):
+    /// ActivateTrap [Server] — yani o kod SADECE server makinesinde çalışıyor.
+    /// Orada SfxPlayer çağırsaydık sesi yalnızca host duyardı, gerçek
+    /// client'lar hiçbir şey duymazdı. Görsel ok göstergesinin ClientRpc ile
+    /// yayılmasının sebebiyle birebir aynı gerekçe.
+    /// </summary>
+    [ClientRpc]
+    private void RpcPlayTrapArmedSound(int index)
+    {
+        if (checkpointManager == null || index < 0 || index >= checkpointManager.checkpoints.Count) return;
+
+        Transform cp = checkpointManager.checkpoints[index];
+        if (cp != null)
+            SfxPlayer.PlayAt(trapArmedClip, cp.position, trapArmedVolume, 0.05f, 12f, 150f);
     }
 
     #endregion
@@ -265,10 +300,8 @@ public class DriftTrap : NetworkBehaviour
             {
                 tc.driftTime += Time.deltaTime;
 
-                float currentPenalty = tc.driftTime * penaltyMultiplier;
-
                 // CLIENT FEEDBACK — bkz. dosya sonundaki not
-                tc.raceController.ShowLiveDriftPenalty(currentPenalty);
+                tc.raceController.ShowLiveDriftPenalty(tc.driftTime);
             }
         }
 
@@ -331,8 +364,9 @@ public class DriftTrap : NetworkBehaviour
     }
 
     /// <summary>
-    /// İLERİDE: Server'da çalışır. AddTimePenalty çağrısı [TargetRpc]
-    /// üzerinden ilgili client'a gönderilecek (bkz. dosya sonu notu).
+    /// Server'da çalışır. ApplyDriftSlowdown çağrısı [TargetRpc] üzerinden
+    /// ilgili client'a gönderiliyor (bkz. dosya sonu notu) — süre cezası
+    /// DEĞİL, arabanın ivmesini geçici kısan gerçek/hissedilir bir ceza.
     /// </summary>
     void ApplyPenalty(TrackedCar tc)
     {
@@ -348,13 +382,15 @@ public class DriftTrap : NetworkBehaviour
             return;
         }
 
-        float penalty = tc.driftTime * penaltyMultiplier;
+        float duration = Mathf.Clamp(
+            tc.driftTime * slowdownSecondsPerDriftSecond,
+            minSlowdownDuration, maxSlowdownDuration);
 
         // CLIENT FEEDBACK
-        tc.raceController.AddTimePenalty(penalty, tc.driftTime);
+        tc.raceController.ApplyDriftSlowdown(slowdownAccelerationMultiplier, duration, tc.driftTime);
 
         if (showDebugLogs)
-            Debug.Log($"[DriftTrap] CEZA! Drift: {tc.driftTime:F2}s × {penaltyMultiplier} = +{penalty:F2}s");
+            Debug.Log($"[DriftTrap] CEZA! Drift: {tc.driftTime:F2}s → {duration:F1}s yavaşlatma (×{slowdownAccelerationMultiplier} ivme).");
 
         trapActive = false;
     }
@@ -363,7 +399,7 @@ public class DriftTrap : NetworkBehaviour
 
     #region CLIENT FEEDBACK — Tamamlandı
     //
-    // ShowLiveDriftPenalty(), ClearLiveDriftPenalty() ve AddTimePenalty()
+    // ShowLiveDriftPenalty(), ClearLiveDriftPenalty() ve ApplyDriftSlowdown()
     // DriftTrap'ten (server) hâlâ doğrudan çağrılıyor, ama PlayerRaceController
     // içindeki implementasyonları artık [TargetRpc] — otomatik olarak sadece
     // o aracın sahibi olan client'ın ekranını etkiliyor. Bu dosyada başka bir

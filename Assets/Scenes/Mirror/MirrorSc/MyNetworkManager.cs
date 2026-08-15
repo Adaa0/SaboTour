@@ -64,6 +64,179 @@ public class MyNetworkManager : NetworkManager
         ShuffleGrid();
     }
 
+    // ─── Steam Lobisi Temizliği ──────────────────────────────────
+    // Oyun kapanınca/ana menüye dönünce Steam lobisinden de çıkılmalı —
+    // yoksa arkadaşların Steam listesinde artık var olmayan bir oyuna
+    // "Katıl" butonu görünmeye devam eder. Burada yapıyoruz ki geliştirici
+    // her çıkış butonuna elle bağlamak zorunda kalmasın.
+    // (SteamLobbyManager Editor'de zaten kendini kapattığı için burada
+    // null kontrolü yeterli, ekstra platform kontrolü gerekmiyor.)
+
+    public override void OnStopServer()
+    {
+        base.OnStopServer();
+
+        if (SteamLobbyManager.Instance != null)
+            SteamLobbyManager.Instance.LeaveLobby();
+
+        // Bu iki sözlük, ARTIK VAR OLMAYAN bağlantı nesnelerini anahtar
+        // olarak tutuyor. Temizlenmezse bir sonraki oyunda ölü kayıtlar
+        // birikiyor (şu an zararsız çünkü yeni bağlantılar yeni anahtar
+        // oluyor, ama sızıntı ve ileride kafa karıştırıcı hata kaynağı).
+        roleAssignments.Clear();
+        colorAssignments.Clear();
+    }
+
+    public override void OnStopClient()
+    {
+        base.OnStopClient();
+
+        // Host'ta bu ikinci kez çağrılıyor (host = server + client), ama
+        // LeaveLobby zaten "lobi yoksa hiçbir şey yapma" diye korumalı.
+        if (SteamLobbyManager.Instance != null)
+            SteamLobbyManager.Instance.LeaveLobby();
+
+        // OYUN OTURUMU BİTTİ → lobi ekranını kullanılabilir hâle geri getir.
+        // Bu olmadan ikinci bir oyun kurmak imkânsızdı (bkz.
+        // LobbyManager.ResetToLobby açıklaması) — oyunu kapatıp yeniden
+        // açmak gerekiyordu.
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.ResetToLobby();
+    }
+
+    #region Bağlantı Kopması Yönetimi
+    // ─────────────────────────────────────────────────────────────────────
+    // NEDEN HOST DEVRİ (host migration) YOK: Mirror'da host = server, yani
+    // tüm yetkili durum (SyncVar'lar, netId'ler, checkpoint ilerlemesi,
+    // roller, cooldown'lar) host'un sürecinde yaşıyor. Host çıkınca bunlar
+    // onunla gidiyor; devretmek için tüm oyun durumunun yeni bir sunucuda
+    // sıfırdan kurulması gerekirdi. Bunun yerine oyun DÜZGÜN ŞEKİLDE
+    // sonlandırılıyor.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Header("Bağlantı Kopması")]
+    [Tooltip("Bağlantı koptuğunda ekranda gösterilen mesajın süresi (saniye).")]
+    [SerializeField] private float disconnectNoticeSeconds = 5f;
+
+    // Oyuncu kendi isteğiyle mi çıkıyor (çıkış butonu), yoksa bağlantı mı
+    // koptu? İkisini ayırmazsak, oyuncu "Çıkış"a bastığında da yüzüne
+    // "bağlantı koptu" yazısı çıkardı.
+    private bool leavingIntentionally;
+
+    /// <summary>
+    /// Çıkış/ana menü butonuna bağlanmak için. Şu an hiçbir butona bağlı
+    /// DEĞİL (henüz öyle bir buton yok) — ayarlar/duraklatma menüsü
+    /// yapıldığında buraya bağlanmalı, yoksa oyuncu kendi çıkışında
+    /// "bağlantı koptu" uyarısı görür.
+    /// </summary>
+    public void LeaveGameIntentionally()
+    {
+        leavingIntentionally = true;
+
+        if (NetworkServer.active && NetworkClient.isConnected) StopHost();
+        else if (NetworkClient.isConnected) StopClient();
+        else if (NetworkServer.active) StopServer();
+    }
+
+    public override void OnServerDisconnect(NetworkConnectionToClient conn)
+    {
+        // ÖNEMLİ — SIRA KRİTİK: bu, base'den ÖNCE çalışmak zorunda.
+        // base.OnServerDisconnect() bu bağlantının oyuncu objesini yok
+        // ediyor; sonra çağırsaydık conn.identity null olurdu ve çıkan
+        // kişinin sabotajcı mı yarışçı mı olduğunu anlayamazdık.
+        HandleRaceDisconnect(conn);
+
+        base.OnServerDisconnect(conn);
+
+        // Lobi kontrolü ise base'den SONRA ve bir kare gecikmeli olmalı —
+        // çıkan oyuncunun LobbyPlayer.AllLobbyPlayers listesinden düşmesini
+        // beklememiz gerekiyor (bu, obje yok edilirken OnStopClient'ta
+        // oluyor). Yoksa "herkes hazır mı" kontrolü hâlâ çıkmış oyuncuyu
+        // sayar ve yarış hiç başlamaz.
+        if (NetworkServer.active)
+            StartCoroutine(RecheckLobbyReadyNextFrame());
+    }
+
+    /// <summary>
+    /// Yarış sırasında biri çıkarsa oyunun kilitlenmemesi için gereken karar.
+    /// Sadece Online Scene'de ve yarış sürerken anlamlı.
+    /// </summary>
+    [Server]
+    private void HandleRaceDisconnect(NetworkConnectionToClient conn)
+    {
+        bool inGameScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == gameSceneName;
+        if (!inGameScene) return;
+
+        RacePodiumManager podium = FindAnyObjectByType<RacePodiumManager>();
+        if (podium == null || !podium.RaceInProgress) return;
+
+        bool wasSaboteur = conn.identity != null && conn.identity.GetComponent<SaboteurController>() != null;
+
+        if (wasSaboteur)
+        {
+            // Yeni bir sabotajcı ATAMIYORUZ: oyunun ortasında bir yarışçıyı
+            // kuleye ışınlamak, o oyuncuyu arabasından koparıp hiç
+            // hazırlanmadığı bir role sokmak olurdu. Yarışçılar kazanmış
+            // sayılıp yarış temiz şekilde bitiyor.
+            podium.ServerForceEndRace(false, "sabotajcı oyundan ayrıldı");
+            return;
+        }
+
+        // Çıkan bir yarışçıydı — geriye başka yarışçı kaldı mı?
+        // ÖNEMLİ: çıkan oyuncunun objesi HENÜZ silinmedi (base'i sonra
+        // çağırıyoruz), bu yüzden onu elle listeden düşüyoruz.
+        int remainingRacers = 0;
+        foreach (PlayerRaceController player in PlayerRaceController.AllPlayers)
+        {
+            if (player == null) continue;
+            if (player.connectionToClient == conn) continue;
+            remainingRacers++;
+        }
+
+        if (remainingRacers == 0)
+        {
+            // Sabotajcı boş bir pistte 270 saniye beklemesin.
+            podium.ServerForceEndRace(true, "son yarışçı da oyundan ayrıldı");
+        }
+    }
+
+    /// <summary>
+    /// Lobide biri çıkarsa, KALANLAR zaten hazırsa yarış başlasın. Bu
+    /// olmadan: 3 kişilik lobide 2 kişi hazır olur, 3. kişi çıkar ve kalan
+    /// ikisi sonsuza kadar bekler (hazır durumunu kapatıp açmadan yarış
+    /// hiç başlamaz).
+    /// </summary>
+    private IEnumerator RecheckLobbyReadyNextFrame()
+    {
+        yield return null;
+
+        if (!NetworkServer.active) yield break;
+
+        bool inGameScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == gameSceneName;
+        if (inGameScene) yield break;
+
+        LobbyPlayer.ServerRecheckAllReady();
+    }
+
+    public override void OnClientDisconnect()
+    {
+        // NetworkServer.active hâlâ true ise bu makine HOST'tur (Mirror
+        // StopHost'ta önce client'ı, sonra server'ı kapatıyor). Host'a
+        // "host oyundan ayrıldı" demek saçma olurdu.
+        bool isHost = NetworkServer.active;
+
+        if (!isHost && !leavingIntentionally)
+            ScreenNotice.Show("Bağlantı koptu.\nHost oyundan ayrılmış olabilir.", disconnectNoticeSeconds);
+
+        leavingIntentionally = false;
+
+        // base, offlineScene'i (ana menü) yüklüyor. ScreenNotice
+        // DontDestroyOnLoad olduğu için mesaj sahne geçişinde kaybolmuyor.
+        base.OnClientDisconnect();
+    }
+
+    #endregion
+
     private void ShuffleGrid()
     {
         shuffledSlots = new List<int>(maxGridSlots);
@@ -156,6 +329,13 @@ public class MyNetworkManager : NetworkManager
         maxGridSlots = Mathf.Max(1, playerCount);
         RacerCount = maxGridSlots;
         ShuffleGrid();
+
+        // Yarış başlıyor — Steam lobisini kilitle. Kilitlenmezse bir arkadaş
+        // yarışın ortasında "Oyuna Katıl" diyebilir; rol ataması lobide
+        // yapıldığı için o oyuncunun rolü hiç olmaz, varsayılan yarışçı
+        // sayılıp yarışın ortasında başlangıç çizgisinde spawn olur.
+        if (SteamLobbyManager.Instance != null)
+            SteamLobbyManager.Instance.SetLobbyJoinable(false);
     }
 
     /// <summary>

@@ -17,6 +17,11 @@ public class ChickenFlockManager : MonoBehaviour
     [SerializeField] private int numberOfWaves = 3;
     [SerializeField] private float delayBetweenWaves = 0.5f;
 
+    [Header("Ses")]
+    [Tooltip("Sürü ilk doğduğu anda spawn noktasında çalan toplu gıdaklama/kanat çırpma sesi. Yarışçıya 'bir şeyler geliyor' uyarısı veriyor. Tek tek tavukların gıdaklaması AYRI (Chicken.cs).")]
+    [SerializeField] private AudioClip flockSpawnClip;
+    [Range(0f, 1f)][SerializeField] private float flockSpawnVolume = 0.9f;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugGizmos = true;
 
@@ -144,6 +149,12 @@ public class ChickenFlockManager : MonoBehaviour
 
         List<Vector3> usedPositions = new List<Vector3>();
         int spawnedTotal = 0;
+
+        // Sürünün TOPLU sesi sadece BİR KERE, ilk dalgadan hemen önce çalıyor
+        // (her dalgada tekrar çalsaydı üst üste binip gürültü olurdu).
+        // Menzil normalden geniş tutuldu: bu bir uyarı sesi, yarışçı sürüyü
+        // görmeden önce duyabilmeli.
+        SfxPlayer.PlayAt(flockSpawnClip, centerPoint, flockSpawnVolume, 0.05f, 15f, 200f);
 
         for (int wave = 0; wave < numberOfWaves; wave++)
         {

@@ -248,10 +248,15 @@ public class TrackPropScatter : MonoBehaviour
                     Vector3 position = curr + right * side * distance + forward * jitter;
                     position.y += heightOffset;
 
-                    // Pist kendi üstüne kıvrıldığında prop, yolun BAŞKA bir
-                    // bölümünün üstüne düşebilir — o yüzden tüm yola olan
-                    // mesafeyi kontrol edip çakışanları atlıyoruz.
-                    if (IsTooCloseToRoad(position, trackPoints, halfRoad + minDistanceFromRoad * 0.5f))
+                    // Pist kendi üstüne kıvrıldığında (özellikle keskin virajlarda)
+                    // prop, yolun BAŞKA bir bölümünün üstüne düşebilir — o yüzden
+                    // tüm yola olan mesafeyi kontrol edip çakışanları atlıyoruz.
+                    // ÖNEMLİ: eşik artık curbWidth'i de içeriyor — eskiden sadece
+                    // yolun (asfaltın) kendisine göre ölçülüyordu, kenarlığı
+                    // (curb) hesaba katmadığı için keskin virajlarda proplar
+                    // kenarlığın ÜSTÜNE düşebiliyordu.
+                    float roadClearance = halfRoad + trackGenerator.curbWidth + minDistanceFromRoad;
+                    if (IsTooCloseToRoad(position, trackPoints, roadClearance))
                         continue;
 
                     PlaceProp(position, rng);

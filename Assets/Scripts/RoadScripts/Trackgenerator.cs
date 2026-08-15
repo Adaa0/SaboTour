@@ -566,6 +566,7 @@ public class TrackGenerator : MonoBehaviour
             {
                 cp.checkpointIndex = i;
                 cp.isFinishLine = (i == 0);
+                cp.RefreshVisual();
             }
 
             _checkpoints.Add(cpObject);
@@ -633,9 +634,13 @@ public class TrackGenerator : MonoBehaviour
             cumulativeDistances.Add(cumulativeDistance);
 
             Vector3 curr = points[i];
+            Vector3 prevPt = points[(i - 1 + points.Count) % points.Count];
             Vector3 next = points[(i + 1) % points.Count];
-            Vector3 dir = (next - curr).normalized;
-            Vector3 right = Vector3.Cross(Vector3.up, dir).normalized;
+            // ÖNEMLİ: GenerateCurbMesh ile BİREBİR aynı miter hesabı kullanılıyor
+            // (ComputeMiterRight) — ikisi farklı offset yöntemi kullanırsa
+            // keskin virajlarda yol kenarı ile kenarlık birbirinden ayrılıp
+            // aralarında boşluk oluşuyor (yaşanmış bug).
+            Vector3 right = ComputeMiterRight(prevPt, curr, next);
 
             vertices.Add(curr - right * (roadWidth / 2f));
             vertices.Add(curr + right * (roadWidth / 2f));
@@ -697,6 +702,40 @@ public class TrackGenerator : MonoBehaviour
     /// yazılıyor; materyal bu UV'yi tekrar eden bir dokuyla boyuyor. Pist ne
     /// kadar rastgele olursa olsun bantlar yol boyunca eşit aralıkta çıkıyor.
     /// </summary>
+    /// <summary>
+    /// "Miter join" — kenarlık gibi bir yol boyunca offset şerit çizerken,
+    /// her noktanın offset yönünü SADECE kendi segmentinin değil, ÖNCEKİ ve
+    /// SONRAKİ segmentin AÇIORTAYINDAN alır. Naif tek-segment offseti
+    /// (sadece "next - curr" yönüne dik) keskin virajlarda ardışık
+    /// dörtgenlerin birbiriyle tam hizalanmamasına sebep oluyordu — ekranda
+    /// görünen çentik/burulma buydu. Bu, vektör çizim programlarının (SVG
+    /// stroke vb.) aynı sorunu çözmek için kullandığı standart teknik.
+    /// Pistin virajlarının KESKİNLİĞİNE hiç dokunmuyor, sadece offset
+    /// geometrisini düzeltiyor.
+    ///
+    /// miterLimit: çok keskin köşelerde (neredeyse U dönüşü) ucun sonsuza
+    /// uzamasını engelliyor — bu noktadan sonra normal (bevel'e yakın) bir
+    /// uzunluğa sabitleniyor.
+    /// </summary>
+    private static Vector3 ComputeMiterRight(Vector3 prev, Vector3 curr, Vector3 next, float miterLimit = 3f)
+    {
+        Vector3 dirIn = (curr - prev).normalized;
+        Vector3 dirOut = (next - curr).normalized;
+
+        Vector3 rightIn = Vector3.Cross(Vector3.up, dirIn).normalized;
+        Vector3 rightOut = Vector3.Cross(Vector3.up, dirOut).normalized;
+
+        Vector3 miter = rightIn + rightOut;
+        if (miter.sqrMagnitude < 0.0001f) return rightOut; // ~180° dönüş, çok nadir
+
+        miter.Normalize();
+
+        float dot = Vector3.Dot(rightIn, miter);
+        float scale = dot > (1f / miterLimit) ? 1f / dot : miterLimit;
+
+        return miter * scale;
+    }
+
     private void GenerateCurbMesh(List<Vector3> points)
     {
         // Önceki kenarlık varsa temizle (yeniden üretimde birikmesin).
@@ -713,6 +752,12 @@ public class TrackGenerator : MonoBehaviour
         // farklı bir layer'da kalırsa araba onu "yol" saymaz ve üstünden
         // geçerken tekerlekler kenarlığın içine gömülür, kabartma hissi olmaz.
         curbObject.layer = gameObject.layer;
+
+        // CarController kenarlığı bu tag'den tanıyıp ekstra sürtünme
+        // uyguluyor (bkz. CarController.curbTag) — Unity'de tag KULLANMADAN
+        // ÖNCE Project Settings > Tags and Layers'da tanımlı olmalı, "Curb"
+        // zaten eklendi (TagManager.asset).
+        curbObject.tag = "Curb";
 
         var mf = curbObject.AddComponent<MeshFilter>();
         var mr = curbObject.AddComponent<MeshRenderer>();
@@ -764,9 +809,9 @@ public class TrackGenerator : MonoBehaviour
                     cumulativeDistance += Vector3.Distance(points[(i - 1) % points.Count], points[pointIndex]);
 
                 Vector3 curr = points[pointIndex];
+                Vector3 prevPt = points[(pointIndex - 1 + points.Count) % points.Count];
                 Vector3 next = points[(pointIndex + 1) % points.Count];
-                Vector3 dir = (next - curr).normalized;
-                Vector3 right = Vector3.Cross(Vector3.up, dir).normalized;
+                Vector3 right = ComputeMiterRight(prevPt, curr, next);
 
                 // İç kenar: yolun tam kenarı, yol seviyesinde.
                 Vector3 inner = curr + right * (sideSign * halfRoad);

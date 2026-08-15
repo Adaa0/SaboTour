@@ -23,6 +23,19 @@ public class Chicken : MonoBehaviour
     [Header("Görsel")]
     [SerializeField] private GameObject visualModel;
 
+    [Header("Ses")]
+    [Tooltip("Koşarken ara ara çalan gıdaklama sesleri. Birden fazla ekle — 15 tavuk aynı klibi çalarsa yapay duyulur, varyasyon şart.")]
+    [SerializeField] private AudioClip[] cluckClips;
+    [Tooltip("İki gıdaklama arasındaki en KISA süre (saniye). Tek bir tavuk için — sürüde 15 tavuk olduğu için toplam sıklık bunun 15 katı olur, bu yüzden bilerek seyrek tutuldu.")]
+    [SerializeField] private float minCluckInterval = 2.5f;
+    [SerializeField] private float maxCluckInterval = 7f;
+    [Range(0f, 1f)][SerializeField] private float cluckVolume = 0.35f;
+    [Tooltip("Araba tavuğa çarptığı anda çalan ses.")]
+    [SerializeField] private AudioClip hitByCarClip;
+    [Range(0f, 1f)][SerializeField] private float hitVolume = 1f;
+
+    private float nextCluckTime;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugGizmos = false;
     [SerializeField] private bool showDebugLogs = false; // Hız değişimini logla
@@ -53,6 +66,16 @@ public class Chicken : MonoBehaviour
         // Başlangıç hızı maksimum
         currentSpeed = maxMoveSpeed;
         targetSpeed = maxMoveSpeed;
+
+        // İlk gıdaklama zamanı RASTGELE — yoksa aynı anda doğan tüm tavuklar
+        // aynı anda gıdaklar ve tek bir "koro" gibi duyulurdu. Rastgele
+        // başlangıçla sesler doğal şekilde birbirine karışıyor.
+        ScheduleNextCluck();
+    }
+
+    private void ScheduleNextCluck()
+    {
+        nextCluckTime = Time.time + Random.Range(minCluckInterval, maxCluckInterval);
     }
 
     /// <summary>
@@ -120,6 +143,20 @@ public class Chicken : MonoBehaviour
         MoveTowardsTarget();
         RotateTowardsTarget();
         CheckIfReachedTarget();
+        HandleCluck();
+    }
+
+    /// <summary>
+    /// Ara ara gıdaklama. SfxPlayer'ın 24 sesle sınırlı havuzu sayesinde,
+    /// çok sayıda tavuk aynı anda gıdaklasa bile ses çamura dönmüyor —
+    /// sınır dolduğunda fazlası sessizce düşürülüyor.
+    /// </summary>
+    private void HandleCluck()
+    {
+        if (Time.time < nextCluckTime) return;
+
+        SfxPlayer.PlayRandomAt(cluckClips, transform.position, cluckVolume, 0.12f, 5f, 60f);
+        ScheduleNextCluck();
     }
 
     /// <summary>
@@ -254,6 +291,11 @@ public class Chicken : MonoBehaviour
     {
         if (isDestroyed) return;
         isDestroyed = true;
+
+        // Çarpma sesi SfxPlayer'dan çalıyor, tavuğun kendi üstündeki bir
+        // AudioSource'tan DEĞİL — çünkü tavuk hemen aşağıda Destroy ediliyor
+        // ve yok olan objenin sesi anında kesilirdi.
+        SfxPlayer.PlayAt(hitByCarClip, transform.position, hitVolume, 0.1f, 6f, 70f);
 
         // Arabayı yavaşlat
         SlowDownCar(car);

@@ -74,7 +74,9 @@ public class SteamManager : MonoBehaviour
         else
             Debug.LogError("[SteamManager] SteamAPI.Init() BAŞARISIZ! Kontrol et: " +
                             "(1) Steam client açık ve giriş yapılmış mı, " +
-                            "(2) steam_appid.txt proje kökünde ve içinde 480 yazıyor mu.");
+                            "(2) Oyunu Steam ÜZERİNDEN mi başlattın? Exe'ye doğrudan çift " +
+                            "tıklıyorsan, exe'nin yanında steam_appid.txt olmalı ve içinde " +
+                            "o build'in App ID'si yazmalı (playtest: 5071180, ana oyun: 5070720).");
 
         everInitialized = Initialized;
     }

@@ -21,6 +21,28 @@ public class IceBomb : MonoBehaviour
     [Tooltip("Yerdeki buz alanı (icePatchPrefab) patlamadan kaç saniye sonra yok olsun.")]
     public float icePatchLifetime = 5f;
 
+    // ─── SESLER ──────────────────────────────────────────────────────────
+    // Bu script HER CLIENT'ta ayrı ayrı çalışıyor (bomba networked bir obje
+    // DEĞİL, IceBombSkill'in [ClientRpc]'si herkeste yerel bir kopya
+    // oluşturuyor — bkz. IceBombSkill.cs). Yani buradaki sesler otomatik
+    // olarak herkeste, doğru anda ve doğru konumda çalıyor; ekstra bir
+    // network mesajı GEREKMİYOR.
+    //
+    // ÖNEMLİ: Sesler SfxPlayer üzerinden çalınıyor, bombanın kendi
+    // AudioSource'undan DEĞİL — çünkü Explode() bombayı yok ediyor ve yok
+    // olan bir objenin AudioSource'u sesi ortasında keser (patlama sesinin
+    // hiç duyulmaması demek).
+    [Header("Sesler")]
+    [Tooltip("Bomba kuleden fırlatıldığı anda, KULENİN TEPESİNDE çalar (fırlatma/mancınık sesi).")]
+    public AudioClip launchClip;
+    [Tooltip("Bomba yere çarptığı anda çalar. Kamera sarsıntısıyla TAM AYNI an — sert bir 'güm' olmalı.")]
+    public AudioClip impactClip;
+    [Tooltip("Patlamadan önceki yanıp sönme sırasında her yanışta çalan bip sesi (bomba geri sayımı). Boş bırakılabilir.")]
+    public AudioClip beepClip;
+    [Tooltip("Patlama + buz alanının oluştuğu an.")]
+    public AudioClip explosionClip;
+    [Range(0f, 1f)] public float sfxVolume = 1f;
+
     [Header("Kamera Sarsıntısı (bomba YERE DÜŞTÜĞÜ an)")]
     [Tooltip("Bu mesafeden daha uzaktaki kameralar hiç sarsılmaz. Yaklaştıkça sarsıntı artar.")]
     public float shakeRadius = 40f;
@@ -51,6 +73,12 @@ public class IceBomb : MonoBehaviour
     {
         launched = true;
         transform.position = startPos;
+
+        // Fırlatma sesi kulenin tepesinde (startPos) çalıyor — sabotajcı
+        // kendi attığını yakından duyuyor, pistteki yarışçılar ise uzaktan
+        // kısık bir sesle "bir şey fırlatıldı" uyarısı alıyor.
+        SfxPlayer.PlayAt(launchClip, startPos, sfxVolume, 0.06f);
+
         StartCoroutine(FlightRoutine(startPos, endPos, duration, arcHeight));
     }
 
@@ -74,6 +102,7 @@ public class IceBomb : MonoBehaviour
         // ÇARPMA ANI — sarsıntı burada, patlamada değil. Bomba yere değdiği
         // an hissediliyor; patlama (buz oluşumu) bundan `delay` saniye sonra.
         ExplosionCameraShake.ShakeAt(end, shakeRadius, shakeStrength);
+        SfxPlayer.PlayAt(impactClip, end, sfxVolume, 0.05f);
 
         BeginCountdown();
     }
@@ -102,6 +131,9 @@ public class IceBomb : MonoBehaviour
         while (flashing)
         {
             rend.material = flashMat;
+            // Bip, görsel yanıp sönmeyle AYNI karede — ışık ve ses birlikte
+            // gelince geri sayım hissi çok daha güçlü oluyor.
+            SfxPlayer.PlayAt(beepClip, transform.position, sfxVolume * 0.6f, 0f, 5f, 45f);
             yield return new WaitForSeconds(flashSpeed);
 
             rend.material = normalMat;
@@ -112,6 +144,11 @@ public class IceBomb : MonoBehaviour
     void Explode()
     {
         flashing = false;
+
+        // Patlama sesi EN BAŞTA — altındaki kod bu objeyi Destroy ediyor,
+        // ama SfxPlayer sesi bombadan bağımsız bir kaynaktan çaldığı için
+        // obje yok olsa bile ses sonuna kadar duyuluyor.
+        SfxPlayer.PlayAt(explosionClip, transform.position, sfxVolume, 0.05f, 12f, 140f);
 
         // Buz alanı oluştur
         GameObject ice = Instantiate(icePatchPrefab, transform.position, Quaternion.identity);

@@ -75,6 +75,26 @@ public class LobbyPlayer : NetworkBehaviour
             LobbyManager.Instance.RefreshPlayerList();
     }
 
+    /// <summary>
+    /// MyNetworkManager.OnServerDisconnect, lobide biri çıktıktan SONRA
+    /// (bir kare gecikmeyle, liste güncellensin diye) bunu çağırıyor.
+    ///
+    /// NEDEN GEREKLİ: "herkes hazır mı" kontrolü normalde sadece biri
+    /// hazır butonuna bastığında çalışıyor. 3 kişilik lobide 2 kişi hazır
+    /// olup 3. kişi çıkarsa, kimse butona basmadığı için kontrol bir daha
+    /// hiç çalışmıyor ve kalan iki oyuncu sonsuza kadar bekliyordu.
+    ///
+    /// Kontrol herhangi bir LobbyPlayer üzerinden çalıştırılabilir; metod
+    /// zaten AllLobbyPlayers listesinin tamamına bakıyor, "this" kimse
+    /// olursa olsun sonuç aynı.
+    /// </summary>
+    [Server]
+    public static void ServerRecheckAllReady()
+    {
+        LobbyPlayer any = AllLobbyPlayers.FirstOrDefault(p => p != null);
+        any?.ServerCheckAllReady();
+    }
+
     [Server]
     private void ServerCheckAllReady()
     {

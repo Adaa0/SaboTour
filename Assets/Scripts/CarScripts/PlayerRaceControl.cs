@@ -40,6 +40,15 @@ public class PlayerRaceController : NetworkBehaviour
     private bool isRacingSynced = true;
     public bool isRacing => isRacingSynced;
 
+    // isRacing false OLMASININ İKİ farklı sebebi olabilir: (1) yarışçı
+    // GERÇEKTEN bitirdi, (2) sabotajcı süre dolarak kazandı ve bu yarışçı
+    // ServerStopForRaceEnd() ile zorla durduruldu (bitirmedi). RaceLeaderboard
+    // eskiden ikisini de "BİTİRDİ" gösteriyordu — süre dolan yarışçı da
+    // "kazandım" izlenimi alıyordu. Bu SyncVar ikisini ayırt ediyor.
+    [SyncVar]
+    private bool hasFinishedRace = false;
+    public bool HasFinished => hasFinishedRace;
+
     [SyncVar(hook = nameof(OnTotalTimeChanged))]
     private float totalTime = 0f;
     public float TotalTime => totalTime;
@@ -58,6 +67,25 @@ public class PlayerRaceController : NetworkBehaviour
     [Header("Timer UI")]
     public TextMeshProUGUI TotalTimeText;
     public TextMeshProUGUI LastLapTimeText;
+
+    // ─── SESLER ──────────────────────────────────────────────────
+    // HEPSİ SADECE BU ARABANIN SAHİBİNİN EKRANINDA ÇALIYOR. Sebebi:
+    // bunlar konumu olan dünya sesleri değil, "sana ait" bildirim sesleri —
+    // başka bir oyuncu checkpoint geçtiğinde senin kulağında tık sesi
+    // duyulması kafa karıştırıcı olurdu. Bu yüzden 2D (PlayUI) çalıyorlar
+    // ve tetiklendikleri yerler zaten owner'a özel: SyncVar hook'unda
+    // isOwned kontrolü, ya da doğrudan [TargetRpc] (Mirror'da TargetRpc
+    // sadece o objenin sahibi olan client'ta çalışır).
+    [Header("Sesler (sadece bu arabanın sahibi duyar)")]
+    [Tooltip("Her checkpoint'ten geçerken çalan kısa tık/bip sesi. Bir yarışta 30+ kez çalıyor — bu yüzden AYRI ve düşük bir ses seviyesi var (aşağıdaki Checkpoint Volume). İstemiyorsan bu alanı BOŞ BIRAK, ses tamamen kalkar (kodda hiçbir değişiklik gerekmez).")]
+    [SerializeField] private AudioClip checkpointClip;
+    [Tooltip("SADECE checkpoint sesinin seviyesi. Diğer bildirimlerden ayrı tutuldu çünkü çok sık tekrarlanan bir ses, diğerleriyle aynı seviyede olursa rahatsız ediyor. 0 yaparsan da susar.")]
+    [Range(0f, 1f)][SerializeField] private float checkpointVolume = 0.3f;
+    [Tooltip("Bir tur tamamlanınca çalan, checkpoint sesinden daha belirgin bir bildirim.")]
+    [SerializeField] private AudioClip lapCompleteClip;
+    [Tooltip("Drift tuzağından zaman cezası yediğinde çalan olumsuz/uyarı sesi.")]
+    [SerializeField] private AudioClip penaltyClip;
+    [Range(0f, 1f)][SerializeField] private float raceSfxVolume = 0.8f;
 
     // Sadece server'da anlamlı — tur başlangıç zamanı ve timer durumu.
     private float currentLapStartTime = 0f;
@@ -209,6 +237,7 @@ public class PlayerRaceController : NetworkBehaviour
     private void ServerFinishRace()
     {
         isRacingSynced = false;
+        hasFinishedRace = true;
         timerRunning = false;
         TargetRaceFinished();
         OnPlayerFinishedRace?.Invoke(this);
@@ -235,6 +264,8 @@ public class PlayerRaceController : NetworkBehaviour
         string lapText = $"Last: {FormatTime(lapTime)}";
         lastLapDisplayText = lapText;
 
+        SfxPlayer.PlayUI(lapCompleteClip, raceSfxVolume);
+
         UpdateLapUI();
 
         if (!showingDriftWarning && LastLapTimeText != null)
@@ -248,6 +279,9 @@ public class PlayerRaceController : NetworkBehaviour
     [TargetRpc]
     private void TargetRaceFinished()
     {
+        // BİLEREK SES YOK: yarışı bitiren oyuncu 1-2 saniye sonra zaten
+        // podyuma geçiyor ve RacePodiumManager zafer sesini çalıyor. Buraya
+        // ayrı bir "bitirdin" sesi konsaydı ikisi üst üste binerdi.
         if (LapCount != null) LapCount.text = "FINISHED!";
         if (CheckpointInfo != null) CheckpointInfo.text = "Race Complete";
         Debug.Log($"🏆 {name} BİTİRDİ! Toplam: {FormatTime(totalTime)}");
@@ -259,20 +293,20 @@ public class PlayerRaceController : NetworkBehaviour
     // gerçek HUD güncellemesi [TargetRpc] ile SADECE bu aracın sahibi olan
     // client'a gönderiliyor (Mirror'da TargetRpc zaten sadece owner'da
     // çalışır, ekstra isOwned kontrolüne gerek yok).
-    public void ShowLiveDriftPenalty(float currentPenalty)
+    public void ShowLiveDriftPenalty(float driftSeconds)
     {
         if (isServer)
-            TargetShowLiveDriftPenalty(currentPenalty);
+            TargetShowLiveDriftPenalty(driftSeconds);
     }
 
     [TargetRpc]
-    private void TargetShowLiveDriftPenalty(float currentPenalty)
+    private void TargetShowLiveDriftPenalty(float driftSeconds)
     {
         if (LastLapTimeText == null) return;
 
         showingDriftWarning = true;
         LastLapTimeText.color = new Color(1f, 0.4f, 0f); // Turuncu
-        LastLapTimeText.text = $"Drift Cezasi: +{currentPenalty:F1}s";
+        LastLapTimeText.text = "DRIFT TUZAĞI!";
     }
 
     public void ClearLiveDriftPenalty()
@@ -293,32 +327,41 @@ public class PlayerRaceController : NetworkBehaviour
     }
 
     // ─── CEZA UYGULA ─────────────────────────────────────────────
-    public void AddTimePenalty(float penalty, float driftTime)
+    // ESKİDEN (AddTimePenalty) drift tuzağına yakalanınca kişisel totalTime'a
+    // saniye ekleniyordu — ama gerçek kazanma koşulu (RacePodiumManager'daki
+    // ORTAK/GLOBAL geri sayım) kişisel süreye hiç bakmıyor, bu yüzden ceza
+    // fiilen görünmez kalıyordu (oyuncular fark etmiyordu, sadece leaderboard
+    // sayısı büyüyordu). Yerine gerçek/hissedilir bir şey koyduk: arabanın
+    // ivmesi bir süreliğine kısılıyor (bkz. CarController.ApplyTrapSlowdown).
+    public void ApplyDriftSlowdown(float accelerationMultiplier, float duration, float driftTime)
     {
         if (!isServer) return;
 
-        totalTime += penalty;
-        TargetAddTimePenalty(penalty, driftTime);
+        TargetApplyDriftSlowdown(accelerationMultiplier, duration, driftTime);
 
-        Debug.Log($"[PlayerRaceController] 💀 +{penalty:F2}s ceza eklendi. Yeni toplam: {FormatTime(totalTime)}");
+        Debug.Log($"[PlayerRaceController] 💀 Drift tuzağı: {duration:F1}s yavaşlatma (drift: {driftTime:F1}s).");
     }
 
     [TargetRpc]
-    private void TargetAddTimePenalty(float penalty, float driftTime)
+    private void TargetApplyDriftSlowdown(float accelerationMultiplier, float duration, float driftTime)
     {
+        SfxPlayer.PlayUI(penaltyClip, raceSfxVolume);
+
+        GetComponent<CarController>()?.ApplyTrapSlowdown(accelerationMultiplier, duration);
+
         if (LastLapTimeText == null) return;
 
         StopAllCoroutines();
-        StartCoroutine(ShowFinalPenaltyNotification(penalty, driftTime));
+        StartCoroutine(ShowSlowdownNotification(duration));
     }
 
-    private System.Collections.IEnumerator ShowFinalPenaltyNotification(float penalty, float driftTime)
+    private System.Collections.IEnumerator ShowSlowdownNotification(float duration)
     {
         if (LastLapTimeText == null) yield break;
 
         showingDriftWarning = true;
         LastLapTimeText.color = Color.red;
-        LastLapTimeText.text = $"+{penalty:F1}s CEZA! ({driftTime:F1}s drift)";
+        LastLapTimeText.text = $"TUZAĞA YAKALANDIN! {duration:F1}s yavaşladın";
 
         yield return new WaitForSeconds(4f);
 
@@ -329,7 +372,27 @@ public class PlayerRaceController : NetworkBehaviour
 
     // ─── SyncVar Hook'ları (HER client'ta çalışır, HUD sadece owner'da) ──
     private void OnTotalCheckpointsChanged(int oldValue, int newValue) => UpdateCheckpointUI();
-    private void OnCurrentCheckpointChanged(int oldValue, int newValue) => UpdateCheckpointUI();
+
+    private void OnCurrentCheckpointChanged(int oldValue, int newValue)
+    {
+        UpdateCheckpointUI();
+
+        // Checkpoint sesi neden BURADA (Checkpoint.cs'in OnTriggerEnter'ında
+        // değil): trigger her client'ın kendi fizik dünyasında tetikleniyor
+        // ve server sırayı doğrulamadan önce çalışıyor — sıra dışı/geçersiz
+        // bir checkpoint'e değince de ses çıkardı. Bu hook ise SADECE server
+        // geçişi ONAYLAYIP SyncVar'ı güncellediğinde çalışıyor, yani ses
+        // her zaman gerçekten sayılan bir geçişi işaret ediyor.
+        if (!isOwned || newValue < 0) return;
+
+        // Tur tamamlandığında checkpoint 0'a dönülüyor — o an ayrıca
+        // lapCompleteClip çalacağı için iki ses üst üste binmesin diye
+        // buradaki tık atlanıyor (bkz. TargetLapCompleted).
+        bool isLapWrap = newValue == 0 && oldValue > 0;
+        if (isLapWrap) return;
+
+        SfxPlayer.PlayUI(checkpointClip, checkpointVolume);
+    }
     private void OnCurrentLapChanged(int oldValue, int newValue) => UpdateLapUI();
     private void OnTotalTimeChanged(float oldValue, float newValue) => UpdateTimerUI();
 

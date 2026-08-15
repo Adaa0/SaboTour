@@ -261,6 +261,12 @@ MonoBehaviour:
   sensitivityStep: 0.2
   minSensitivity: 0.2
   maxSensitivity: 8
+  footstepClips: []
+  stepDistance: 2.2
+  footstepVolume: 0.4
+  jumpClip: {fileID: 0}
+  landClip: {fileID: 0}
+  jumpLandVolume: 0.6
   fpCam: {fileID: 6819517073102545911}
   cameraPitchTransform: {fileID: 4382188129125509073}
 --- !u!114 &7312867911308870832
@@ -280,6 +286,11 @@ MonoBehaviour:
   syncInterval: 0
   fpCam: {fileID: 4382188129125509073}
   interactionRange: 8
+  skillSelectClip: {fileID: 8300000, guid: 0a32f2fc74cb1374797e09b65cbe8f35, type: 3}
+  checkpointSelectClip: {fileID: 8300000, guid: 300df15a8ef31eb4a8cccb175c6461f3, type: 3}
+  triggerClip: {fileID: 8300000, guid: b1bc2d5b4b6129c45bd945475ea8d6b0, type: 3}
+  deniedClip: {fileID: 0}
+  interactionVolume: 0.85
   showDebugLogs: 1
 --- !u!1 &6819517073102545911
 GameObject:
