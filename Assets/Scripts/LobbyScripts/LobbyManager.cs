@@ -21,7 +21,28 @@ using System.Text;
 /// </summary>
 public class LobbyManager : MonoBehaviour
 {
-    public static LobbyManager Instance { get; private set; }
+    // ══ KENDİNİ ONARAN INSTANCE ══════════════════════════════════════════
+    // Düz bir `static LobbyManager Instance` alanı bu projede iki kere bug
+    // üretti, çünkü Mirror ana menüye dönerken ESKİ NetworkManager objesini
+    // (ve altındaki bu Canvas'ı) YOK EDİYOR, yerine Offline Scene'in kendi
+    // taze kopyası geliyor. Yok edilmiş bir MonoBehaviour'a Unity'de `== null`
+    // sorulduğunda `true` dönüyor — bu property tam olarak onu kullanıyor:
+    // elindeki referans ölmüşse sahnedeki YAŞAYAN kopyayı bulup ona geçiyor.
+    // Böylece "Instance ölü bir objeyi gösteriyor" durumu imkânsız hale
+    // geliyor; kim kimi ezdi tartışmasına hiç girmiyoruz.
+    private static LobbyManager _instance;
+
+    public static LobbyManager Instance
+    {
+        get
+        {
+            if (_instance == null)
+                _instance = FindAnyObjectByType<LobbyManager>(FindObjectsInactive.Include);
+
+            return _instance;
+        }
+        private set => _instance = value;
+    }
 
     [Header("Lobi UI")]
     public GameObject LobbyPanel;
@@ -54,14 +75,106 @@ public class LobbyManager : MonoBehaviour
 
     void Awake()
     {
+        // ══ EN YENİ KOPYA HER ZAMAN SAHİPTİR — BU BİR BUG DÜZELTMESİ ══
+        // 16 Ağustos'ta buraya "var olan Instance'ı asla ezme" koruması
+        // konmuştu ve BU KORUMA YANLIŞTI. Dayandığı varsayım şuydu: "ana
+        // menüye dönünce Offline Scene'in TAZE kopyası gelir, Mirror onu
+        // siler, DontDestroyOnLoad'daki ESKİ kopya yaşar."
+        //
+        // GERÇEK TAM TERSİ (Mirror kaynağında doğrulandı — NetworkManager.cs
+        // StopServer satır ~587 ve OnClientDisconnectInternal satır ~1280):
+        // Mirror ana menüye dönmeden ÖNCE NetworkManager objesini
+        // `SceneManager.MoveGameObjectToScene` ile DontDestroyOnLoad'DAN
+        // ÇIKARIP o anki sahneye taşıyor — kendi yorumuyla "let a fresh
+        // Network Manager be created". Yani ESKİ kopya (ve altındaki bu
+        // Canvas) ana menü yüklenirken YOK EDİLİYOR, yaşayan taze kopya
+        // Offline Scene'den gelen YENİ kopya oluyor.
+        //
+        // Sahne yüklemesi ASENKRON olduğu için yeni kopyanın Awake'i, eski
+        // kopya HÂLÂ HAYATTAYKEN çalışabiliyor. O anda eski koruma devreye
+        // girip YAŞAYACAK olan kopyayı "fazlalık" sayıyor ve kendini
+        // kaydettirmiyordu. Hemen ardından eski kopya ölüp Instance null
+        // kalıyordu. İKİ SONUÇ (ikisi de gerçek testte yaşandı):
+        //   1. Start() erken dönüyordu → `LoadingScreenPanel.SetActive(false)`
+        //      hiç çalışmıyor → sahnede varsayılan olarak AÇIK duran yükleme
+        //      ekranı lobinin üstünü kapatıyor → "hiçbir buton gözükmüyor".
+        //      Ayrıca "Hazırım" butonuna listener da bağlanmıyordu.
+        //   2. Aynı hata SteamLobbyManager'da daha da sertti (orada kopya
+        //      kendini Destroy ediyordu) → "Oyun Kur" butonu ölüyor, ikinci
+        //      bir lobi kurulamıyordu.
+        //
+        // ÇÖZÜM: Kim kimi ezecek tartışmasına hiç girme. En son Awake olan
+        // kopya sahibi olsun (o, yaşamaya devam edecek olan); ölen kopya
+        // zaten OnDestroy'da bayrağı bırakıyor ve yukarıdaki kendini onaran
+        // property her koşulda yaşayan kopyayı buluyor.
         Instance = this;
     }
 
     void Start()
     {
+        SetupUI();
+    }
+
+    /// <summary>
+    /// Buton bağlama + panel başlangıç durumu. Start()'tan ayrı bir metot
+    /// çünkü ARTIK KOŞULSUZ çalışıyor (bkz. Awake'teki uzun not) ve aynı
+    /// kopyada birden fazla kez çağrılması zararsız olmalı — bu yüzden
+    /// listener önce KALDIRILIP sonra ekleniyor (aksi halde iki kere bağlanıp
+    /// "Hazırım" tek tıkta iki kez tetiklenir, yani hiç değişmemiş görünürdü).
+    /// </summary>
+    private void SetupUI()
+    {
         if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(false);
-        if (ReadyButton != null) ReadyButton.onClick.AddListener(ToggleReady);
+
+        if (ReadyButton != null)
+        {
+            ReadyButton.onClick.RemoveListener(ToggleReady);
+            ReadyButton.onClick.AddListener(ToggleReady);
+        }
+
+        if (LobbyPanel != null) LobbyPanel.SetActive(true);
+
         RefreshPlayerList();
+    }
+
+    void OnEnable()
+    {
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += HandleSceneLoaded;
+    }
+
+    void OnDisable()
+    {
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded -= HandleSceneLoaded;
+    }
+
+    void OnDestroy()
+    {
+        // `Instance` yerine doğrudan `_instance`: property'nin getter'ı
+        // gerekirse sahneyi tarıyor, sahne yıkılırken bunu tetiklemek
+        // gereksiz (ve Unity'de riskli). Bayrağı sadece bırakıyoruz —
+        // bir sonraki okumada getter yaşayan kopyayı zaten bulacak.
+        if (_instance == this) _instance = null;
+    }
+
+    /// <summary>
+    /// İKİNCİ GÜVENLİK AĞI: lobi ekranını sahne yüklendikten SONRA da düzeltir.
+    ///
+    /// NEDEN GEREKLİ: MyNetworkManager.OnStopClient → ResetToLobby() zinciri,
+    /// Mirror ana menü sahnesini YÜKLEMEDEN ÖNCE çalışıyor. O ana kadar her
+    /// şey doğru olsa bile, arada bir sahne geçişi var ve bu geçişte bir şey
+    /// ters giderse (yukarıdaki Instance sorunu gibi) panel kapalı kalıyordu.
+    /// Burada ağ oturumunun gerçekten bittiğini görüp paneli açıyoruz — kim
+    /// çağırmayı unutursa unutsun lobi ekranı kullanılabilir hale geliyor.
+    /// </summary>
+    private void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene,
+                                   UnityEngine.SceneManagement.LoadSceneMode mode)
+    {
+        if (Instance != this) return;
+
+        // Ağ oturumu hâlâ açıksa yarıştayız/lobideyiz — dokunma.
+        if (NetworkServer.active || NetworkClient.active) return;
+
+        ResetToLobby();
     }
 
     // ─── Ready Butonu (Client) ──────────────────────────────────

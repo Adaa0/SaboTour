@@ -22,7 +22,7 @@ public class LobbyPlayer : NetworkBehaviour
     private bool isReady;
     public bool IsReady => isReady;
 
-    [SyncVar]
+    [SyncVar(hook = nameof(OnLabelChanged))]
     private string playerLabel = "Oyuncu";
     public string PlayerLabel => playerLabel;
 
@@ -58,6 +58,43 @@ public class LobbyPlayer : NetworkBehaviour
         base.OnStopClient();
         AllLobbyPlayers.Remove(this);
 
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.RefreshPlayerList();
+    }
+
+    /// <summary>
+    /// SADECE bu objenin sahibi olan client'ta çalışıyor — ana menüde yazılan
+    /// ismi sunucuya bildiriyor.
+    ///
+    /// NEDEN BAĞLANTI ANINDA DEĞİL DE BURADA: Mirror'da bağlantı kurulurken
+    /// veri taşımak için özel mesaj tipi tanımlamak gerekir. Obje spawn
+    /// olduktan sonra sahibi bir [Command] göndermek çok daha basit ve bu
+    /// projedeki diğer akışlarla (CmdSetReady) aynı desende kalıyor.
+    /// İsmin bir kare geç gelmesi lobide sorun değil.
+    /// </summary>
+    public override void OnStartAuthority()
+    {
+        base.OnStartAuthority();
+        CmdSetName(PlayerNameSettings.PlayerName);
+    }
+
+    /// <summary>
+    /// İsmi sunucuya yazar. 🚨 GELEN METNE GÜVENİLMİYOR: `Sanitize` burada
+    /// TEKRAR çağrılıyor. Client tarafındaki kutu zaten 20 karakterle
+    /// sınırlıyor ama değiştirilmiş bir build istediğini gönderebilir —
+    /// oyuncu listesi ve leaderboard TextMeshPro zengin metni işlediği için
+    /// temizlenmemiş bir isim herkesin ekranını bozabilirdi.
+    /// </summary>
+    [Command]
+    private void CmdSetName(string requestedName)
+    {
+        string clean = PlayerNameSettings.Sanitize(requestedName);
+
+        playerLabel = string.IsNullOrEmpty(clean) ? $"Oyuncu {netId}" : clean;
+    }
+
+    private void OnLabelChanged(string oldValue, string newValue)
+    {
         if (LobbyManager.Instance != null)
             LobbyManager.Instance.RefreshPlayerList();
     }
@@ -131,12 +168,21 @@ public class LobbyPlayer : NetworkBehaviour
         for (int i = 0; i < players.Count; i++)
             colorMap[players[i].connectionToClient] = shuffledColors[i % shuffledColors.Count];
 
+        // İSİM TAŞIMA: LobbyPlayer objeleri sahne geçişinde yok oluyor, yani
+        // isimler onlarla birlikte kaybolurdu. Rol ve renkle AYNI yolu
+        // kullanıyoruz — DontDestroyOnLoad olan NetworkManager'a aktarılıyor,
+        // orada Online Scene'deki araç spawn'ında geri okunuyor.
+        var nameMap = new System.Collections.Generic.Dictionary<NetworkConnectionToClient, string>();
+        for (int i = 0; i < players.Count; i++)
+            nameMap[players[i].connectionToClient] = players[i].PlayerLabel;
+
         MyNetworkManager netManager = NetworkManager.singleton as MyNetworkManager;
         if (netManager != null)
         {
             netManager.PrepareGridForRace(racerCount);
             netManager.SetRoleAssignments(roleMap);
             netManager.SetColorAssignments(colorMap);
+            netManager.SetNameAssignments(nameMap);
         }
 
         RpcShowLoadingScreen();

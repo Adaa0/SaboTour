@@ -46,6 +46,18 @@ public class PauseMenuController : MonoBehaviour
 
     private static PauseMenuController instance;
 
+    /// <summary>
+    /// Ana menüdeki butonlar (MainMenuButtons) buradan "Nasıl Oynanır" /
+    /// "Geri Bildirim" panellerini açıyor. Paneller bu prefabın içinde
+    /// yaşıyor ve prefab DontDestroyOnLoad olduğu için her sahnede hazır —
+    /// aynı panelin ikinci bir kopyasını lobiye kurmaya gerek yok.
+    /// </summary>
+    public static PauseMenuController Instance => instance;
+
+    /// <summary>Panellerin gerçekten kullanılabilir olup olmadığı (prefab güncel mi).</summary>
+    public bool HasHowToPlay => howToPlayPanel != null;
+    public bool HasFeedback => feedbackMenu != null;
+
     [Header("Prefab Referansları (PauseMenuPrefabBuilder tarafından otomatik bağlanır)")]
     public GameObject panelRoot;
     public GameObject mainButtonsPanel;
@@ -55,7 +67,29 @@ public class PauseMenuController : MonoBehaviour
     public Button oyundanAyrilButton;
     public Button oyunuKapatButton;
 
-    private bool showingSettings;
+    [Header("Playtest Panelleri (geçici — prefab güncellenene kadar boş olabilir)")]
+    [Tooltip("Geri bildirim paneli. Bu alanlar BOŞ olabilir; o zaman ilgili buton " +
+             "hiç görünmez ve menünün geri kalanı normal çalışır.")]
+    public FeedbackMenuController feedbackMenu;
+    public Button feedbackButton;
+
+    [Tooltip("'Nasıl Oynanır' paneli — sadece metin taşıyan basit bir panel, " +
+             "kendi script'i yok, açma/kapama buradan yapılıyor.")]
+    public GameObject howToPlayPanel;
+    public Button nasilOynanirButton;
+    [Tooltip("Nasıl Oynanır panelinin içindeki 'Geri' butonu.")]
+    public Button howToPlayGeriButton;
+
+    // Ana butonlar yerine bir ALT PANEL (ayarlar / geri bildirim / nasıl
+    // oynanır) açık mı. ESC'nin davranışını belirliyor: alt paneldeyken ESC
+    // menüyü kapatmak yerine önce ana panele "geri" dönüyor.
+    private bool showingSubPanel;
+
+    // Menü, ANA MENÜDEKİ bir butonla doğrudan bir alt panele açıldı mı?
+    // Öyleyse "Geri"/ESC, duraklatma menüsünün ana butonlarına (Devam Et /
+    // Oyundan Ayrıl / Oyunu Kapat) değil, doğrudan ana menüye dönmeli —
+    // oyuncu o menüyü hiç görmedi, oraya düşmek kafa karıştırır.
+    private bool openedForSubPanelOnly;
 
 
     /// <summary>
@@ -114,6 +148,16 @@ public class PauseMenuController : MonoBehaviour
         oyundanAyrilButton.onClick.AddListener(LeaveGame);
         oyunuKapatButton.onClick.AddListener(QuitApplication);
 
+        // ─── Playtest panelleri ──────────────────────────────────────────
+        // Hepsi null-güvenli: prefab henüz güncellenmemişse bu butonlar yok
+        // demektir ve menünün geri kalanı hiçbir şey olmamış gibi çalışır.
+        // Butonu olmayan bir paneli oyuncu zaten açamaz.
+        if (feedbackButton != null) feedbackButton.onClick.AddListener(ShowFeedback);
+        else if (feedbackMenu != null) feedbackMenu.gameObject.SetActive(false);
+
+        if (nasilOynanirButton != null) nasilOynanirButton.onClick.AddListener(ShowHowToPlay);
+        if (howToPlayGeriButton != null) howToPlayGeriButton.onClick.AddListener(ShowMainPanel);
+
         // Prefabda SettingsPanel'in tiki AÇIK kalmış olsa bile tutarlı bir
         // başlangıç durumu garanti ediyoruz: ana butonlar görünür, ayarlar
         // gizli. Bu olmadan ayarlar paneli ana butonların ÜSTÜNDE duruyor ve
@@ -128,6 +172,11 @@ public class PauseMenuController : MonoBehaviour
         // hata verdiğinde panelRoot hiç kapatılmıyordu — menü ekranda açık
         // kalıyor ama IsOpen false olduğu için hiçbir buton onu kapatamıyordu.
         if (settingsMenu != null) settingsMenu.Initialize();
+
+        // Geri bildirim paneli de KAPALI başladığı için kendi Awake'i hiç
+        // çalışmıyor — kurulumunu buradan tetikliyoruz (ayarlar panelindeki
+        // dersin aynısı, bkz. CLAUDE.md "KAPALI OBJEDE Awake() ÇALIŞMIYOR").
+        if (feedbackMenu != null) feedbackMenu.Initialize(this);
     }
 
     void Update()
@@ -136,9 +185,10 @@ public class PauseMenuController : MonoBehaviour
 
         if (!Keyboard.current.escapeKey.wasPressedThisFrame) return;
 
-        // Ayarlar panelindeyken ESC menüyü tamamen kapatmak yerine önce
-        // ana panele "geri" dönsün — beklenen menü davranışı bu.
-        if (IsOpen && showingSettings)
+        // Bir alt paneldeyken (ayarlar / geri bildirim / nasıl oynanır) ESC
+        // menüyü tamamen kapatmak yerine önce ana panele "geri" dönsün —
+        // beklenen menü davranışı bu.
+        if (IsOpen && showingSubPanel)
             ShowMainPanel();
         else
             Toggle();
@@ -202,19 +252,89 @@ public class PauseMenuController : MonoBehaviour
         ShowMainPanel();
     }
 
-    private void ShowSettings()
+    // ─── Ana Menüden Doğrudan Açma ───────────────────────────────────────
+    // Lobi ekranındaki "Nasıl Oynanır" / "Geri Bildirim" butonları bunları
+    // çağırıyor. Duraklatma menüsünün ana butonları HİÇ gösterilmiyor:
+    // panel açılır açılmaz istenen alt panele giriliyor, "Geri" de doğrudan
+    // ana menüye dönüyor.
+
+    public void OpenHowToPlayFromMainMenu()
     {
-        mainButtonsPanel.SetActive(false);
-        settingsMenu.Show();
-        showingSettings = true;
+        if (howToPlayPanel == null) return;
+
+        Open();
+        ShowHowToPlay();
+        openedForSubPanelOnly = true;
     }
 
-    /// <summary>Ayarlar panelindeki "Geri" butonu da bunu çağırıyor.</summary>
+    public void OpenFeedbackFromMainMenu()
+    {
+        if (feedbackMenu == null) return;
+
+        Open();
+        ShowFeedback();
+        openedForSubPanelOnly = true;
+    }
+
+    private void ShowSettings()
+    {
+        HideAllSubPanels();
+        mainButtonsPanel.SetActive(false);
+        settingsMenu.Show();
+        showingSubPanel = true;
+    }
+
+    private void ShowFeedback()
+    {
+        if (feedbackMenu == null) return;
+
+        HideAllSubPanels();
+        mainButtonsPanel.SetActive(false);
+        feedbackMenu.Show();
+        showingSubPanel = true;
+    }
+
+    private void ShowHowToPlay()
+    {
+        if (howToPlayPanel == null) return;
+
+        HideAllSubPanels();
+        mainButtonsPanel.SetActive(false);
+        howToPlayPanel.SetActive(true);
+        showingSubPanel = true;
+    }
+
+    /// <summary>
+    /// Alt panellerin "Geri" butonları ve ESC bunu çağırıyor.
+    ///
+    /// ÖNCE HEPSİNİ KAPATIP sonra ana butonları açıyoruz: bir alt panel açık
+    /// kalırsa ana butonların ÜSTÜNDE durup tıklamaları emiyor — ayarlar
+    /// panelinde birebir bu yaşandı ("Devam Et çalışmıyor" şikayetinin
+    /// sebeplerinden biri buydu, bkz. CLAUDE.md).
+    /// </summary>
     public void ShowMainPanel()
     {
-        if (settingsMenu != null) settingsMenu.Hide();
+        // Ana menüden doğrudan bir alt panele girildiyse "Geri" menüyü
+        // tamamen kapatıyor (bkz. openedForSubPanelOnly). Bayrağı Close()
+        // çağırmadan ÖNCE düşürmek şart: Close() sonunda tekrar bu metodu
+        // çağırıyor, bayrak açık kalsaydı sonsuz döngüye girerdi.
+        if (openedForSubPanelOnly)
+        {
+            openedForSubPanelOnly = false;
+            Close();
+            return;
+        }
+
+        HideAllSubPanels();
         mainButtonsPanel.SetActive(true);
-        showingSettings = false;
+        showingSubPanel = false;
+    }
+
+    private void HideAllSubPanels()
+    {
+        if (settingsMenu != null) settingsMenu.Hide();
+        if (feedbackMenu != null) feedbackMenu.Hide();
+        if (howToPlayPanel != null) howToPlayPanel.SetActive(false);
     }
 
     // ─── Buton Eylemleri ─────────────────────────────────────────────────

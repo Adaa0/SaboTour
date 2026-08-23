@@ -387,30 +387,112 @@ public class CarController : NetworkBehaviour
 
     #endregion
 
-    #region 9c. Drift Tuzağı — Geçici Yavaşlatma
+    #region 9c. Motor Arızası — Geçici Güç Kaybı
 
-    // DriftTrap.cs artık süre cezası yerine burayı kullanıyor (bkz.
-    // PlayerRaceController.ApplyDriftSlowdown). Coroutine YOK — ice
-    // pattern'iyle aynı mantık: her karede "süresi doldu mu" diye
-    // Time.time karşılaştırılıyor, obje yok olursa/sahne değişirse
-    // Stop edilmesi gereken bir coroutine kalmıyor.
-    private float trapSlowdownMultiplier = 1f;
-    private float trapSlowdownEndTime = -1f;
+    // EngineFailureTrap.cs (sabotajcının 3. yeteneği) burayı kullanıyor.
+    // Coroutine YOK — buz (ice) deseniyle aynı mantık: her karede zaman
+    // karşılaştırılıyor, obje yok olursa/sahne değişirse Stop edilmesi
+    // gereken bir coroutine kalmıyor.
+    //
+    // ── GÜÇ NEDEN ANİDEN KESİLMİYOR ──
+    // İlk versiyon sabit bir çarpan uygulayıp süre dolunca birden normale
+    // dönüyordu. Bu "ucuz"/bozuk hissettiriyordu: araç bir anda güç kaybedip
+    // bir anda geri kazanıyordu. Şimdi üç fazlı bir eğri var:
+    //   1. rampIn  → güç yumuşakça dibe iner  ("motor boğuluyor")
+    //   2. hold    → dipte kalır              (asıl stun süresi)
+    //   3. rampOut → yumuşakça toparlanır     ("motor kendine geliyor")
+    // Geçişlerde SmoothStep kullanılıyor, yani eğrinin başı ve sonu da
+    // yumuşak — düz bir Lerp'te köşeler hâlâ hissediliyordu.
+    private float engineFailureStartTime = -1f;
+    private float engineFailureMin = 1f;
+    private float engineFailureRampIn = 0.35f;
+    private float engineFailureHold = 1.4f;
+    private float engineFailureRampOut = 1f;
+    private float engineFailureBrake = 0f;
+
+    [Tooltip("Motor arızası freni bu hızın (km/s) ALTINDA kesilir — araç tuzaktan sonra sürünerek kalmasın, o hız civarında dengeye otursun. Çim sürtünmesindeki grassDragFloorKmh ile aynı gerekçe.")]
+    [SerializeField] private float engineFailureBrakeFloorKmh = 25f;
+
+    [Tooltip("Motor arızası sırasında gaz/geri/el freni (W/S/Space) tamamen kilitlensin mi? Kapatırsan oyuncu arıza boyunca gaza basmaya devam edebilir ve tuzak çok daha hafif hissedilir.")]
+    [SerializeField] private bool lockInputDuringEngineFailure = true;
+
+    [Tooltip("Kilit açıkken DİREKSİYON (A/D) çalışmaya devam etsin mi?\nKAPALI (varsayılan) = araç yönünü de kaybeder, ceza en sert hâlinde.\nAÇIK = oyuncu en azından yönünü düzeltebilir; virajda arıza yerse pistten çıkma riski azalır.")]
+    [SerializeField] private bool keepSteeringDuringEngineFailure = false;
+
+    /// <summary>Şu an motor arızası devrede mi? (Girdi kilidi ve dış sistemler için.)</summary>
+    public bool IsEngineFailureActive =>
+        engineFailureStartTime >= 0f &&
+        Time.time - engineFailureStartTime < (engineFailureRampIn + engineFailureHold + engineFailureRampOut);
 
     /// <summary>
-    /// DriftTrap tuzağına yakalanınca (PlayerRaceController.ApplyDriftSlowdown
-    /// üzerinden, sadece bu arabanın SAHİBİ olan client'ta) çağrılır. Aracın
-    /// ivmesini bir süreliğine kısıyor — sert bir fren DEĞİL, "motor gücü
-    /// azaldı" hissi (aniden durursa haksız/sinir bozucu hissettirirdi).
+    /// Motor arızası tuzağına yakalanınca çağrılır — EngineFailureTrap'in
+    /// [TargetRpc]'si üzerinden, yani SADECE bu arabanın sahibi olan client'ta.
+    ///
+    /// İKİ AYRI ETKİ birlikte uygulanıyor:
+    ///   1. minMultiplier → motor gücü (gaza basınca gelen itme) kısılır.
+    ///   2. brakeStrength → hıza orantılı gerçek fren.
+    /// İKİNCİSİ OLMADAN TUZAK HİSSEDİLMİYOR: güç çarpanı sadece HIZLANMAYI
+    /// engelliyor, zaten hızlı giden aracı momentum taşımaya devam ediyor —
+    /// düz yolda tam gazla giden oyuncu hiçbir şey fark etmiyordu (ilk
+    /// versiyonun gerçek sorunu buydu, "yavaşlatma" adı yanıltıcıydı).
     /// </summary>
-    public void ApplyTrapSlowdown(float accelerationMultiplier, float duration)
+    public void ApplyEngineFailure(float minMultiplier, float rampIn, float hold, float rampOut, float brakeStrength)
     {
-        trapSlowdownMultiplier = Mathf.Clamp01(accelerationMultiplier);
-        trapSlowdownEndTime = Time.time + duration;
+        engineFailureMin = Mathf.Clamp01(minMultiplier);
+        engineFailureRampIn = Mathf.Max(0.01f, rampIn);
+        engineFailureHold = Mathf.Max(0f, hold);
+        engineFailureRampOut = Mathf.Max(0.01f, rampOut);
+        engineFailureBrake = Mathf.Max(0f, brakeStrength);
+        engineFailureStartTime = Time.time;
     }
 
-    private float CurrentTrapSlowdownMultiplier =>
-        Time.time < trapSlowdownEndTime ? trapSlowdownMultiplier : 1f;
+    /// <summary>Şu anki motor gücü çarpanı (1 = normal).</summary>
+    private float CurrentEngineFailureMultiplier
+    {
+        get
+        {
+            if (engineFailureStartTime < 0f) return 1f;
+
+            float t = Time.time - engineFailureStartTime;
+            float total = engineFailureRampIn + engineFailureHold + engineFailureRampOut;
+
+            if (t < 0f || t >= total) return 1f;
+
+            // 1. Dibe iniş
+            if (t < engineFailureRampIn)
+                return Mathf.SmoothStep(1f, engineFailureMin, t / engineFailureRampIn);
+
+            // 2. Dipte bekleme
+            float holdEnd = engineFailureRampIn + engineFailureHold;
+            if (t < holdEnd) return engineFailureMin;
+
+            // 3. Toparlanma
+            return Mathf.SmoothStep(engineFailureMin, 1f, (t - holdEnd) / engineFailureRampOut);
+        }
+    }
+
+    /// <summary>
+    /// Motor arızasının fren gücü — güç eğrisiyle AYNI zamanlamada iniyor ve
+    /// çıkıyor. Güç ne kadar dibe indiyse fren de o kadar güçlü, yani araç
+    /// "boğulurken" hız kaybediyor, motor toparlanırken fren de bırakıyor.
+    /// </summary>
+    private float CurrentEngineFailureBrake
+    {
+        get
+        {
+            if (engineFailureBrake <= 0f) return 0f;
+
+            float multiplier = CurrentEngineFailureMultiplier;
+            float range = 1f - engineFailureMin;
+
+            // Arıza yokken (multiplier == 1) ya da anlamsız bir ayarda fren yok.
+            if (range <= 0.001f || multiplier >= 0.999f) return 0f;
+
+            // Güç 1'den ne kadar uzaklaştıysa fren o oranda devrede.
+            float intensity = Mathf.Clamp01((1f - multiplier) / range);
+            return engineFailureBrake * intensity;
+        }
+    }
 
     #endregion
 
@@ -826,6 +908,23 @@ public class CarController : NetworkBehaviour
         moveInput = Input.GetAxis("Vertical");
         steerInput = Input.GetAxis("Horizontal");
         isHandbrakePressed = Input.GetKey(KeyCode.Space);
+
+        // ── MOTOR ARIZASI: KONTROLLER KİLİTLİ ──
+        // Girdiyi OKUYUP sonra siliyoruz (hiç okumamak yerine): Input.GetAxis
+        // kendi içinde yumuşatma yapıyor, okumayı atlarsak arıza bitince
+        // oyuncunun basılı tuttuğu gaz sıfırdan rampalanır ve araç bir an
+        // tepkisiz kalırdı. Böylece kilit kalkar kalkmaz gerçek girdi geçerli.
+        //
+        // Fren eğrisi (CurrentEngineFailureBrake) buna rağmen devam ediyor —
+        // yani araç kilitlendiği anda taş gibi durmuyor, boğularak yavaşlıyor.
+        if (lockInputDuringEngineFailure && IsEngineFailureActive)
+        {
+            moveInput = 0f;
+            isHandbrakePressed = false;
+
+            if (!keepSteeringDuringEngineFailure)
+                steerInput = 0f;
+        }
     }
 
     #endregion
@@ -870,7 +969,7 @@ public class CarController : NetworkBehaviour
             currentAcceleration *= curbAccelerationGrip;
 
         // Drift tuzağı cezası — yüzeyden BAĞIMSIZ, üstüne çarpan olarak biniyor.
-        currentAcceleration *= CurrentTrapSlowdownMultiplier;
+        currentAcceleration *= CurrentEngineFailureMultiplier;
 
         if (Mathf.Abs(moveInput) > 0.01f)
         {
@@ -1000,6 +1099,18 @@ public class CarController : NetworkBehaviour
         {
             carRB.AddForce(-carRB.linearVelocity * airDrag, ForceMode.Acceleration);
         }
+
+        // MOTOR ARIZASI FRENİ — yüzeyden ve yerde/havada olmaktan BAĞIMSIZ,
+        // o yüzden yukarıdaki dalların hepsinin dışında duruyor.
+        //
+        // Çim sürtünmesiyle aynı desen: kuvvet hıza (linearVelocity) çarpıldığı
+        // için sabit bir fren değil — hızlıyken çok, yavaşken az yavaşlatıyor,
+        // yani araç sertçe kilitlenmek yerine gittikçe boğuluyor. Alt sınır da
+        // aynı gerekçeyle var: bunun altında fren kesiliyor ki oyuncu tuzaktan
+        // sonra sürünerek kalmasın.
+        float failureBrake = CurrentEngineFailureBrake;
+        if (failureBrake > 0f && currentSpeed > engineFailureBrakeFloorKmh)
+            carRB.AddForce(-carRB.linearVelocity * failureBrake, ForceMode.Acceleration);
     }
 
     private void CheckAndStop()
@@ -1234,6 +1345,99 @@ public class CarController : NetworkBehaviour
 
     /// <summary>Araba yerde mi (havadayken motor sesi boşta gaz gibi yükselmesin diye).</summary>
     public bool IsGroundedNow => isGrounded;
+
+    #endregion
+
+    #region Prop Çarpışmasını Geçici Kapatma (buz bombası)
+
+    // Aracın collider'ı olan objelerinin ORİJİNAL katmanları. Katman
+    // değiştirmeden önce buraya yazılıyor ki geri alırken tahmin yürütmek
+    // gerekmesin (araçta farklı katmanda duran parçalar olabilir).
+    private readonly Dictionary<GameObject, int> originalColliderLayers = new Dictionary<GameObject, int>();
+    private Coroutine propIgnoreRoutine;
+
+    /// <summary>
+    /// Aracı, ağaç/kaya gibi propların collider'larını GEÇİCİ olarak yok
+    /// sayan bir katmana taşır.
+    ///
+    /// NEDEN: Buz bombası aracı 25000'lik bir impulse ile havaya fırlatıyor.
+    /// Piste yakın proplar artık collider'lı olduğu için, uçan araç bir ağaca
+    /// takılıp anında duruyor — hem komik olan an ölüyor hem de araç garip
+    /// bir yerde sıkışıp kalabiliyor. Bu süre boyunca proplar yok sayılıyor,
+    /// araç serbestçe uçuyor.
+    ///
+    /// NEDEN KATMAN, Physics.IgnoreCollision DEĞİL: IgnoreCollision ÇİFT
+    /// bazlı çalışıyor — uçan araç için sahnedeki yüzlerce propla tek tek
+    /// eşleşme kurmak gerekirdi ve araç uçarken başlangıçta yakında olmayan
+    /// propların yanından da geçiyor. Katman değişimi tek satır ve O(1).
+    ///
+    /// SADECE PROPLAR yok sayılıyor — zemin, yol, diğer araçlar, checkpoint
+    /// tetikleyicileri normal çalışmaya devam ediyor (Physics matrisinde
+    /// yalnızca CarLaunched × Prop kapalı).
+    ///
+    /// HER CLIENT'TA çağrılıyor: IceBomb.Explode her makinede yerel olarak
+    /// çalışıyor ve kuvveti her makinede uyguluyor, dolayısıyla katman
+    /// değişimi de her makinede olmalı — yoksa araç bir ekranda ağaçtan
+    /// geçerken diğerinde çarpardı.
+    /// </summary>
+    public void IgnorePropCollisions(float seconds, float maxSeconds)
+    {
+        int launchedLayer = LaunchedLayer;
+        if (launchedLayer < 0) return;   // katman tanımlı değilse sessizce atla
+
+        if (propIgnoreRoutine != null) StopCoroutine(propIgnoreRoutine);
+        propIgnoreRoutine = StartCoroutine(PropIgnoreRoutine(seconds, maxSeconds, launchedLayer));
+    }
+
+    private System.Collections.IEnumerator PropIgnoreRoutine(float minSeconds, float maxSeconds, int launchedLayer)
+    {
+        // 🚨 SADECE İLK ÇAĞRIDA katmanları kaydet. Physics.OverlapSphere aynı
+        // aracın BİRDEN FAZLA collider'ını döndürebiliyor, yani bu metot tek
+        // patlamada üst üste çağrılabilir. İkinci çağrıda tekrar kaydetseydik
+        // "orijinal katman" olarak CarLaunched'ı yazardık ve araç patlamadan
+        // sonra sonsuza kadar o katmanda kalırdı (proplardan geçmeye devam
+        // ederdi). Bu yüzden liste doluysa dokunmuyoruz, sadece süre uzuyor.
+        if (originalColliderLayers.Count == 0)
+        {
+            // SADECE collider taşıyan objelerin katmanı değişiyor. Tüm hiyerarşiyi
+            // topluca değiştirmek, araçtaki başka amaçlarla ayrı katmana konmuş
+            // parçaları (varsa) bozardı.
+            foreach (Collider col in GetComponentsInChildren<Collider>(true))
+            {
+                originalColliderLayers[col.gameObject] = col.gameObject.layer;
+                col.gameObject.layer = launchedLayer;
+            }
+        }
+
+        // En az minSeconds bekle — bu sürede araç zaten havada.
+        yield return new WaitForSeconds(minSeconds);
+
+        // Sonra yere inmesini bekle, ama sonsuza kadar değil: araç bir yere
+        // sıkışıp hiç "grounded" olmazsa katmanı kalıcı değişmiş kalırdı.
+        float deadline = Time.time + Mathf.Max(0f, maxSeconds - minSeconds);
+        while (!isGrounded && Time.time < deadline)
+            yield return null;
+
+        foreach (KeyValuePair<GameObject, int> entry in originalColliderLayers)
+            if (entry.Key != null) entry.Key.layer = entry.Value;
+
+        originalColliderLayers.Clear();
+        propIgnoreRoutine = null;
+    }
+
+    /// <summary>
+    /// Fırlatılan aracın geçici katmanı. Proje ayarlarında "CarLaunched"
+    /// tanımlı değilse -1 döner ve sistem sessizce devre dışı kalır.
+    /// </summary>
+    private static int LaunchedLayer
+    {
+        get
+        {
+            if (cachedLaunchedLayer == -2) cachedLaunchedLayer = LayerMask.NameToLayer("CarLaunched");
+            return cachedLaunchedLayer;
+        }
+    }
+    private static int cachedLaunchedLayer = -2;   // -2 = henüz bakılmadı
 
     #endregion
 }

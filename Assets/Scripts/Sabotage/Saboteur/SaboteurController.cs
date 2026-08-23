@@ -71,6 +71,11 @@ public class SaboteurController : NetworkBehaviour
     [Header("Referanslar")]
     [Tooltip("Sabotajcının 1st person kamerası. Prefabda BAŞLANGIÇTA KAPALI olmalı (CarCam ile aynı desen).")]
     [SerializeField] private GameObject fpCam;
+
+    // Sabotajcı oynarken KAPATTIĞIMIZ sahne kamerası. Karakter yok olurken
+    // (yarış bitti / bağlantı koptu) geri açılması gerekiyor — yoksa bir
+    // sonraki yarışta yarışçı olarak doğan oyuncuda hiçbir kamera çalışmaz.
+    private Camera sceneMainCamera;
     [Tooltip("Yukarı/aşağı bakışta döndürülen obje — genelde FPCam'in kendisi (yaw gövdede, pitch kamerada).")]
     [SerializeField] private Transform cameraPitchTransform;
 
@@ -122,21 +127,47 @@ public class SaboteurController : NetworkBehaviour
 
         Debug.Log($"[SaboteurController] OnStartAuthority netId={netId} — bu client artık sabotajcıyı kontrol ediyor.");
 
-        if (fpCam != null)
-            fpCam.SetActive(true);
-        else
-            Debug.LogWarning("[SaboteurController] fpCam atanmamış! Inspector'dan FPCam objesini sürükle.");
+        // ══ SAHNE KAMERASINI KAPAT — BÜYÜK BİR PERFORMANS BUG'I (21 Ağustos 2026) ══
+        // BELİRTİ: zayıf bir makinede yarışçıda 110 FPS alınırken sabotajcıda
+        // 30 FPS'e düşüyordu.
+        //
+        // SEBEP: Online Scene'deki sabit Main Camera hiçbir zaman KAPATILMIYORDU.
+        // Eskiden burada sadece onun AudioListener'ı kapatılıyordu — kameranın
+        // KENDİSİ açık kalıyor ve her karede dünyayı baştan çiziyordu. Sabotajcı
+        // FPCam'i de açılınca **iki tam kamera geçişi** oluyordu, yani çizim
+        // maliyeti iki katına çıkıyordu. Yarışçıda bu olmuyor çünkü orada
+        // Cinemachine zaten aynı Main Camera'yı sürüyor, ikinci kamera yok.
+        //
+        // FPCam'i "MainCamera" olarak ETİKETLİYORUZ ki `Camera.main` boşa
+        // düşmesin: RacePodiumManager ve PropCullDistances gibi yerler ona
+        // bakıyor. Böylece sabotajcı oynarken Camera.main = gerçekten baktığı
+        // kamera oluyor — hem doğru hem de çizim mesafeleri artık ona da
+        // uygulanıyor.
+        //
+        // ⚠️ SIRA ÖNEMLİ: sahne kamerası FPCam etiketlenmeden ÖNCE bulunmalı,
+        // yoksa Camera.main hangisini döndüreceği belirsiz hale gelir.
+        sceneMainCamera = Camera.main;
 
-        // Online Scene'deki sabit Main Camera'nın AudioListener'ı her zaman
-        // açık duruyor (yarışçılar zaten CarCam'de kendi AudioListener'ı
-        // olmadığı için sesi ondan alıyor). Sabotajcı FPCam'i aktif olunca
-        // ikisi birden açık kalıp Unity'nin "2 audio listener" uyarısına
-        // sebep oluyordu. Sabotajcı için FPCam'in kendi listener'ı yeterli
-        // ve daha doğru (kafa hareketiyle ses konumu değişsin diye), bu
-        // yüzden sabit kamerayı SADECE bu client'ta devre dışı bırakıyoruz.
-        AudioListener sceneListener = Camera.main != null ? Camera.main.GetComponent<AudioListener>() : null;
-        if (sceneListener != null)
-            sceneListener.enabled = false;
+        if (sceneMainCamera != null)
+        {
+            // AudioListener zaten kapatılıyordu (iki listener uyarısı için) —
+            // sabotajcının FPCam'inin kendi listener'ı var ve kafa hareketiyle
+            // ses konumu değişsin diye o daha doğru.
+            AudioListener sceneListener = sceneMainCamera.GetComponent<AudioListener>();
+            if (sceneListener != null) sceneListener.enabled = false;
+
+            sceneMainCamera.enabled = false;
+        }
+
+        if (fpCam != null)
+        {
+            fpCam.tag = "MainCamera";
+            fpCam.SetActive(true);
+        }
+        else
+        {
+            Debug.LogWarning("[SaboteurController] fpCam atanmamış! Inspector'dan FPCam objesini sürükle.");
+        }
 
         SetCursorLocked(true);
 
@@ -425,5 +456,35 @@ public class SaboteurController : NetworkBehaviour
     {
         if (crosshairRoot != null)
             Destroy(crosshairRoot);
+
+        RestoreSceneCamera();
+    }
+
+    /// <summary>
+    /// Sabotajcı oynarken kapattığımız sahne kamerasını geri açar.
+    ///
+    /// NEDEN ŞART: `sceneMainCamera.enabled = false` KALICI bir değişiklik —
+    /// sahne objesi DontDestroyOnLoad değil ama aynı sahne içinde yarış
+    /// bitip yeni bir tur başlarsa ya da bu oyuncu bir sonraki yarışta
+    /// YARIŞÇI olarak doğarsa kamerasız kalırdı.
+    ///
+    /// PODYUMDA ÇAĞRILMIYOR (bilinçli): `RacePodiumManager` podyuma geçerken
+    /// kendi kamerasını açıyor. Sahne kamerasını orada geri açsaydık yine
+    /// iki kamera birden çizerdi — yani düzelttiğimiz sorunun podyum hâli.
+    /// </summary>
+    private void RestoreSceneCamera()
+    {
+        // Etiketi bırak: iki obje birden "MainCamera" etiketli kalırsa
+        // Camera.main hangisini döndüreceği belirsizleşir.
+        if (fpCam != null) fpCam.tag = "Untagged";
+
+        if (sceneMainCamera == null) return;
+
+        sceneMainCamera.enabled = true;
+
+        AudioListener sceneListener = sceneMainCamera.GetComponent<AudioListener>();
+        if (sceneListener != null) sceneListener.enabled = true;
+
+        sceneMainCamera = null;
     }
 }

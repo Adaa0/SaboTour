@@ -17,6 +17,16 @@ public class IceBomb : MonoBehaviour
     public float explosionRadius = 3f;
     public float explosionForce = 25000f;
 
+    [Header("Fırlayan Araç — Prop Çarpışması")]
+    [Tooltip("Patlamayla fırlayan araç, bu süre boyunca ağaç/kaya collider'larını " +
+             "yok sayar — havada ilk ağaca takılıp durmasın diye. Bu süre dolduktan " +
+             "SONRA araç yere değer değmez normale döner.")]
+    public float propIgnoreMinSeconds = 1.5f;
+
+    [Tooltip("Araç yere hiç inmezse (bir yere sıkışırsa) en geç bu kadar sonra prop " +
+             "çarpışması geri açılır — güvenlik ağı.")]
+    public float propIgnoreMaxSeconds = 8f;
+
     [Header("Buz Alanı Ömrü")]
     [Tooltip("Yerdeki buz alanı (icePatchPrefab) patlamadan kaç saniye sonra yok olsun.")]
     public float icePatchLifetime = 5f;
@@ -177,6 +187,14 @@ public class IceBomb : MonoBehaviour
                 float finalForce = explosionForce * t;
                 Vector3 dir = (hit.transform.position - transform.position).normalized;
                 rb.AddForce(dir * finalForce, ForceMode.Impulse);
+
+                // Fırlayan araç, piste yakın propların (ağaç/kaya) collider'larını
+                // bir süreliğine yok saysın — yoksa havadayken ilk ağaca takılıp
+                // duruyor ve patlamanın bütün etkisi kayboluyor.
+                // Araç yere indiği anda (ya da en geç maxSeconds sonra) normale
+                // dönüyor, bkz. CarController.IgnorePropCollisions.
+                if (car != null)
+                    car.IgnorePropCollisions(propIgnoreMinSeconds, propIgnoreMaxSeconds);
             }
         }
 

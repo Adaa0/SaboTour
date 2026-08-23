@@ -22,6 +22,16 @@ public class InteractableFeedback : MonoBehaviour
     private Vector3 baseScale;
     private Coroutine pressRoutine;
 
+    // Buton NE KADAR basılı kalıyor: 0 = yukarıda, 1 = tam çökük.
+    // Tıklama anındaki geçici basmadan farklı — süresiz, dışarıdan ayarlanıyor.
+    // Ara değerler kullanılabiliyor çünkü skil butonu İKİ FARKLI sebeple
+    // basılı kalabiliyor ve ikisi ayırt edilebilmeli:
+    //   seçili (yarı basılı)  <  cooldown'da (tam basılı)
+    private float heldAmount;
+
+    /// <summary>Butonun şu an "dinlenme" ölçeği — basılı kalıyorsa çökük hâli.</summary>
+    private Vector3 RestScale => Vector3.Lerp(baseScale, baseScale * pressScale, heldAmount);
+
     void Awake()
     {
         baseScale = transform.localScale;
@@ -36,11 +46,51 @@ public class InteractableFeedback : MonoBehaviour
         pressRoutine = StartCoroutine(PressRoutine());
     }
 
+    /// <summary>
+    /// Butonu ne kadar basılı tutacağını ayarlar. 0 = yukarıda,
+    /// 1 = tam çökük, aradaki değerler kısmi.
+    ///
+    /// SkillSelectButton bunu iki durumdan hangisinin geçerli olduğuna göre
+    /// çağırıyor: skil SEÇİLİ ise yarı basılı (elinde ne olduğunu görürsün),
+    /// COOLDOWN'da ise tam basılı (mekanik olarak kilitlenmiş gibi).
+    /// Cooldown bitince yukarı kalkıyor.
+    ///
+    /// NEDEN SCALE (pozisyon değil): butonun hangi yöne "içeri" gittiği
+    /// modelin kendi eksenlerine bağlı ve bu konsol FBX'i döndürülmüş
+    /// olarak geliyor — localPosition'a "aşağı" yazmak butonu YAN TARAFA
+    /// kaydırıyordu (19 Ağustos'ta bir kere denendi ve geri alındı).
+    /// Ölçek küçültmek yönden tamamen bağımsız, her modelde doğru çalışıyor.
+    /// </summary>
+    public void SetHeldAmount(float amount)
+    {
+        amount = Mathf.Clamp01(amount);
+        if (Mathf.Approximately(amount, heldAmount)) return;
+        heldAmount = amount;
+
+        if (!isActiveAndEnabled)
+        {
+            transform.localScale = RestScale;
+            return;
+        }
+
+        if (pressRoutine != null) StopCoroutine(pressRoutine);
+        pressRoutine = StartCoroutine(SettleRoutine());
+    }
+
     private IEnumerator PressRoutine()
     {
-        yield return ScaleOverTime(baseScale, baseScale * pressScale, pressDuration);
-        yield return ScaleOverTime(baseScale * pressScale, baseScale, pressDuration);
-        transform.localScale = baseScale;
+        Vector3 pressed = baseScale * pressScale;
+        yield return ScaleOverTime(transform.localScale, pressed, pressDuration);
+        yield return ScaleOverTime(pressed, RestScale, pressDuration);
+        transform.localScale = RestScale;
+        pressRoutine = null;
+    }
+
+    /// <summary>Basılı kalma durumu değiştiğinde yumuşak geçiş.</summary>
+    private IEnumerator SettleRoutine()
+    {
+        yield return ScaleOverTime(transform.localScale, RestScale, pressDuration);
+        transform.localScale = RestScale;
         pressRoutine = null;
     }
 

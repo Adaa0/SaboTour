@@ -119,6 +119,19 @@ public class CheckpointRecovery : MonoBehaviour
     private bool recovering;
     private bool warnedMissingTrack;
 
+    // ─── Sonsuz döngü koruması ───────────────────────────────────────────
+    // Kurtarma, arabayı kurtardığı yerde YİNE "kurtarılmalı" sayarsa oyun
+    // kilitleniyor (bu gerçekten yaşandı: araba hiç kıpırdamadan sürekli aynı
+    // checkpoint'e ışınlanıp duruyordu). Asıl sebep düzeltildi, ama başka bir
+    // sebep çıkarsa oyunu oynanamaz hale getirmesin diye bu güvenlik ağı var:
+    // kısa sürede üst üste çok kurtarma olursa sistem kendini kapatıyor.
+    private int recentRecoveries;
+    private float lastRecoveryTime = -999f;
+    private bool disabledByLoopGuard;
+
+    private const float LoopWindowSeconds = 8f;
+    private const int LoopLimit = 3;
+
     private void Awake()
     {
         car = GetComponent<CarController>();
@@ -225,7 +238,7 @@ public class CheckpointRecovery : MonoBehaviour
     /// </summary>
     private bool ShouldMonitor()
     {
-        if (recovering) return false;
+        if (recovering || disabledByLoopGuard) return false;
 
         // Mirror'ın isOwned'ı spawn anında hemen dolmuyor, o yüzden Start'ta
         // bir kere değil her kontrolde bakıyoruz. IsNetworkOwned kullanılıyor
@@ -290,11 +303,33 @@ public class CheckpointRecovery : MonoBehaviour
         Vector3 carPos = transform.position;
         float closestSqr = float.MaxValue;
 
-        // Karekök almadan karşılaştırıyoruz (sqrMagnitude) — birkaç bin nokta
-        // üzerinde yarım saniyede bir dönüldüğü için maliyeti ihmal edilebilir.
+        // ══ NOKTALARA DEĞİL, ÇİZGİ PARÇALARINA ÖLÇÜYORUZ — BİR BUG'I DÜZELTİYOR ══
+        //
+        // BELİRTİ: araba pistin TAM ORTASINDA, hiç kıpırdamadan dururken bile
+        // "pistten uzaklaştı (73m)" deyip checkpoint'e ışınlanıyordu. Işınlandığı
+        // yer de aynı ölçüm hatasına düştüğü için sonsuz döngüye giriyordu.
+        //
+        // SEBEP: eski kod en yakın NOKTAYA olan mesafeyi ölçüyordu. Ama bu liste
+        // eşit aralıklı DEĞİL — Bezier yumuşatması virajlara çok nokta koyuyor,
+        // düzlüklere çok az. (Aynı düzensizlik checkpoint'lerin eşit aralıklı
+        // dağıtılması için de bir kere sorun olmuştu, bkz. TrackGenerator'daki
+        // GetPointAndForwardAtDistance.) Uzun bir düzlükte iki komşu nokta
+        // arasında yüzlerce metre olabiliyor; yolun göbeğinde giden araba en
+        // yakın NOKTADAN 97m uzakta ölçülüp "kayboldu" sanılıyordu.
+        //
+        // ÇÖZÜM: ardışık iki noktayı birleştiren ÇİZGİ PARÇASINA olan mesafe.
+        // Böylece nokta sıklığı sonucu hiç etkilemiyor — iki nokta arası 500m
+        // olsa bile aradaki çizgiye olan mesafe doğru çıkıyor.
+        //
+        // Döngü noktaların SONUNCUSUNU İLKİNE de bağlıyor (i -> i+1 mod n),
+        // çünkü pist kapalı bir halka; o segment atlanırsa başlangıç/bitiş
+        // çizgisinin olduğu bölgede aynı hata geri gelirdi.
         for (int i = 0; i < points.Count; i++)
         {
-            float sqr = (points[i] - carPos).sqrMagnitude;
+            Vector3 a = points[i];
+            Vector3 b = points[(i + 1) % points.Count];
+
+            float sqr = SqrDistanceToSegment(carPos, a, b);
             if (sqr < closestSqr) closestSqr = sqr;
         }
 
@@ -302,9 +337,48 @@ public class CheckpointRecovery : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Bir noktanın [a,b] doğru parçasına olan en kısa mesafesinin KARESİ.
+    /// Karekök almıyoruz çünkü sadece karşılaştırma yapılıyor — kök tek sefer,
+    /// en sonda alınıyor.
+    /// </summary>
+    private static float SqrDistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector3 ab = b - a;
+        float lengthSqr = ab.sqrMagnitude;
+
+        // Üst üste binmiş iki nokta — segment yok, tek noktaya düşüyor.
+        if (lengthSqr < 0.0001f) return (point - a).sqrMagnitude;
+
+        // Noktayı segmentin üzerine izdüşür, sonra [0,1] aralığına kırp:
+        // kırpma sayesinde segmentin DIŞINA taşan izdüşümler uçlara oturuyor.
+        float t = Mathf.Clamp01(Vector3.Dot(point - a, ab) / lengthSqr);
+        Vector3 closest = a + ab * t;
+
+        return (point - closest).sqrMagnitude;
+    }
+
     private void TriggerRecovery(int checkpointIndex, string reason)
     {
         if (recovering) return;
+
+        // Döngü koruması: kısa sürede üst üste tetikleniyorsa kurtarma
+        // arabayı "kurtarılması gereken" bir yere bırakıyor demektir.
+        recentRecoveries = (Time.time - lastRecoveryTime < LoopWindowSeconds) ? recentRecoveries + 1 : 1;
+        lastRecoveryTime = Time.time;
+
+        if (recentRecoveries > LoopLimit)
+        {
+            disabledByLoopGuard = true;
+            Debug.LogError(
+                $"[CheckpointRecovery] DÖNGÜ TESPİT EDİLDİ — {LoopWindowSeconds} saniye içinde " +
+                $"{recentRecoveries} kurtarma denendi ('{reason}'). Kurtarma sistemi bu araba için " +
+                "KAPATILDI, yoksa oyun oynanamaz hale gelirdi.\n" +
+                "SEBEP ARANACAK YER: ışınlanılan checkpoint'in kendisi 'kurtarılması gereken' bir " +
+                "konumda olabilir (ör. yola olan mesafesi Max Distance From Track eşiğinden büyük).", this);
+            return;
+        }
+
         if (!TryGetRespawnPose(checkpointIndex, out Vector3 position, out Quaternion rotation)) return;
 
         // Hangi sistemin tetiklediği loglanıyor — iki eşik (Max Distance From

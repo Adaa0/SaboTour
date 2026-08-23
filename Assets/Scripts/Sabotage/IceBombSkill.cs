@@ -44,6 +44,19 @@ public class IceBombSkill : NetworkBehaviour
     private int selectedCheckpointIndex = -1;
     private float nextReadyTime = 0f;
 
+    // ─── COOLDOWN'UN SABOTAJCI EKRANINA YANSIMASI ────────────────────────
+    // nextReadyTime yukarıda SERVER'ın kendi kararı (Time.time ile). Aşağıdaki
+    // SyncVar ise AYNI bilginin client'a geçen kopyası — sabotajcının kule
+    // odasındaki buton ışığı bunu okuyup "hazır mı, ne kadar kaldı" diye
+    // çiziyor. Detaylı gerekçe: SkillCooldownState.cs.
+    [SyncVar] private SkillCooldownState cooldownState;
+
+    /// <summary>Kalan cooldown (saniye). 0 ise skil hazır. HER client okuyabilir.</summary>
+    public float CooldownRemaining => Mathf.Max(0f, (float)(cooldownState.endTime - NetworkTime.time));
+
+    /// <summary>Bu cooldown turunun toplam süresi — ışığın dolum oranı için.</summary>
+    public float CooldownTotal => cooldownState.duration;
+
     void Start()
     {
         checkpointManager = FindAnyObjectByType<CheckpointManager>();
@@ -85,9 +98,20 @@ public class IceBombSkill : NetworkBehaviour
         Vector3 landingPos = cp.position + Vector3.down * landingDepthOffset;
         RpcLaunchIceBomb(launchPoint.position, landingPos, cp.rotation);
 
-        nextReadyTime = Time.time + (checkpointCooldown != null
+        float cooldown = checkpointCooldown != null
             ? checkpointCooldown.ScaleSkillCooldown(skillCooldownSeconds)
-            : skillCooldownSeconds);
+            : skillCooldownSeconds;
+
+        nextReadyTime = Time.time + cooldown;
+
+        // Aynı bilgiyi client'a da yolla (buton ışığı için). Zaman NetworkTime
+        // ile — Time.time client'ta anlamsız olurdu, bkz. SkillCooldownState.cs.
+        cooldownState = new SkillCooldownState
+        {
+            endTime = NetworkTime.time + cooldown,
+            duration = cooldown
+        };
+
         checkpointCooldown?.StartCooldown(selectedCheckpointIndex);
         return true;
     }

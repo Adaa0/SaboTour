@@ -42,6 +42,16 @@ public class MyNetworkManager : NetworkManager
         colorAssignments = assignments;
     }
 
+    // Oyuncunun lobide seçtiği isim. LobbyPlayer objeleri sahne geçişinde yok
+    // olduğu için isimler burada saklanıp Online Scene'de araca aktarılıyor —
+    // rol ve renkle birebir aynı desen.
+    private Dictionary<NetworkConnectionToClient, string> nameAssignments = new();
+
+    public void SetNameAssignments(Dictionary<NetworkConnectionToClient, string> assignments)
+    {
+        nameAssignments = assignments;
+    }
+
     [Header("Yarış Izgarası (F1 Dizilişi)")]
     [Tooltip("Aynı anda kaç araç için ızgara slotu ayrılacak.")]
     [SerializeField] private int maxGridSlots = 4;
@@ -85,6 +95,7 @@ public class MyNetworkManager : NetworkManager
         // oluyor, ama sızıntı ve ileride kafa karıştırıcı hata kaynağı).
         roleAssignments.Clear();
         colorAssignments.Clear();
+        nameAssignments.Clear();
     }
 
     public override void OnStopClient()
@@ -393,6 +404,15 @@ public class MyNetworkManager : NetworkManager
             player.TryGetComponent(out CarController carController))
         {
             carController.SetColorIndex(colorIndex);
+        }
+
+        // İsim de AddPlayerForConnection'dan ÖNCE yazılıyor — aynı gerekçe:
+        // ilk spawn paketiyle gitsin, leaderboard'da bir an "Oyuncu 5" yazıp
+        // sonra gerçek isme dönmesin.
+        if (nameAssignments.TryGetValue(conn, out string playerName) &&
+            player.TryGetComponent(out PlayerRaceController raceController))
+        {
+            raceController.ServerSetLabel(playerName);
         }
 
         NetworkServer.AddPlayerForConnection(conn, player);

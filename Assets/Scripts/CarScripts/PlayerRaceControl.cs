@@ -57,8 +57,22 @@ public class PlayerRaceController : NetworkBehaviour
     public string FormattedTotalTime => FormatTime(totalTime);
 
     [SyncVar]
-    private string playerLabel = "Yarışçı";
+    private string playerLabel;
     public string PlayerLabel => playerLabel;
+
+    /// <summary>
+    /// Oyuncunun lobide seçtiği ismi sunucuda yazar. MyNetworkManager,
+    /// aracı spawn ederken (AddPlayerForConnection'dan ÖNCE) çağırıyor.
+    ///
+    /// Metin burada TEKRAR temizlenmiyor — lobide `LobbyPlayer.CmdSetName`
+    /// zaten sunucuda temizledi ve buraya sunucunun kendi kaydından geliyor,
+    /// client'tan değil.
+    /// </summary>
+    [Server]
+    public void ServerSetLabel(string label)
+    {
+        if (!string.IsNullOrEmpty(label)) playerLabel = label;
+    }
 
     [Header("UI")]
     public TextMeshProUGUI LapCount;
@@ -83,8 +97,6 @@ public class PlayerRaceController : NetworkBehaviour
     [Range(0f, 1f)][SerializeField] private float checkpointVolume = 0.3f;
     [Tooltip("Bir tur tamamlanınca çalan, checkpoint sesinden daha belirgin bir bildirim.")]
     [SerializeField] private AudioClip lapCompleteClip;
-    [Tooltip("Drift tuzağından zaman cezası yediğinde çalan olumsuz/uyarı sesi.")]
-    [SerializeField] private AudioClip penaltyClip;
     [Range(0f, 1f)][SerializeField] private float raceSfxVolume = 0.8f;
 
     // Sadece server'da anlamlı — tur başlangıç zamanı ve timer durumu.
@@ -93,7 +105,6 @@ public class PlayerRaceController : NetworkBehaviour
 
     // Sadece owner'ın client'ında kullanılır (HUD gösterimi).
     private string lastLapDisplayText = "";
-    private bool showingDriftWarning = false;
 
     // ─── Leaderboard Kaydı ───────────────────────────────────────
     // Her client, sahnede spawn olan TÜM PlayerRaceController'ları burada
@@ -129,7 +140,12 @@ public class PlayerRaceController : NetworkBehaviour
     {
         base.OnStartServer();
 
-        playerLabel = $"Oyuncu {netId}";
+        // KOŞULLU: isim lobiden geldiyse (ServerSetLabel spawn'dan ÖNCE
+        // çağrılıyor) onu EZMEYELİM. Sadece isim bilinmiyorsa — ör. yarışın
+        // ortasında bağlanan biri, ya da lobisiz doğrudan test — yedek ada
+        // düşüyoruz.
+        if (string.IsNullOrEmpty(playerLabel))
+            playerLabel = $"Oyuncu {netId}";
 
         // Pist zaten TrackSeedSync ile deterministik üretildiği için
         // checkpointsPerLap tüm client'larda aynı — server buradan okuyup
@@ -268,7 +284,7 @@ public class PlayerRaceController : NetworkBehaviour
 
         UpdateLapUI();
 
-        if (!showingDriftWarning && LastLapTimeText != null)
+        if (LastLapTimeText != null)
         {
             LastLapTimeText.color = Color.white;
             LastLapTimeText.text = lapText;
@@ -287,88 +303,16 @@ public class PlayerRaceController : NetworkBehaviour
         Debug.Log($"🏆 {name} BİTİRDİ! Toplam: {FormatTime(totalTime)}");
     }
 
-    // ─── CANLI DRIFT CEZA GÖSTERİMİ ─────────────────────────────
-    // DriftTrap.cs artık server-authoritative bir NetworkBehaviour (bkz.
-    // DriftTrap.cs). Bu üç public metod SERVER tarafında çağrılıyor;
-    // gerçek HUD güncellemesi [TargetRpc] ile SADECE bu aracın sahibi olan
-    // client'a gönderiliyor (Mirror'da TargetRpc zaten sadece owner'da
-    // çalışır, ekstra isOwned kontrolüne gerek yok).
-    public void ShowLiveDriftPenalty(float driftSeconds)
-    {
-        if (isServer)
-            TargetShowLiveDriftPenalty(driftSeconds);
-    }
-
-    [TargetRpc]
-    private void TargetShowLiveDriftPenalty(float driftSeconds)
-    {
-        if (LastLapTimeText == null) return;
-
-        showingDriftWarning = true;
-        LastLapTimeText.color = new Color(1f, 0.4f, 0f); // Turuncu
-        LastLapTimeText.text = "DRIFT TUZAĞI!";
-    }
-
-    public void ClearLiveDriftPenalty()
-    {
-        if (isServer)
-            TargetClearLiveDriftPenalty();
-    }
-
-    [TargetRpc]
-    private void TargetClearLiveDriftPenalty()
-    {
-        showingDriftWarning = false;
-
-        if (LastLapTimeText == null) return;
-
-        LastLapTimeText.color = Color.white;
-        LastLapTimeText.text = lastLapDisplayText;
-    }
-
-    // ─── CEZA UYGULA ─────────────────────────────────────────────
-    // ESKİDEN (AddTimePenalty) drift tuzağına yakalanınca kişisel totalTime'a
-    // saniye ekleniyordu — ama gerçek kazanma koşulu (RacePodiumManager'daki
-    // ORTAK/GLOBAL geri sayım) kişisel süreye hiç bakmıyor, bu yüzden ceza
-    // fiilen görünmez kalıyordu (oyuncular fark etmiyordu, sadece leaderboard
-    // sayısı büyüyordu). Yerine gerçek/hissedilir bir şey koyduk: arabanın
-    // ivmesi bir süreliğine kısılıyor (bkz. CarController.ApplyTrapSlowdown).
-    public void ApplyDriftSlowdown(float accelerationMultiplier, float duration, float driftTime)
-    {
-        if (!isServer) return;
-
-        TargetApplyDriftSlowdown(accelerationMultiplier, duration, driftTime);
-
-        Debug.Log($"[PlayerRaceController] 💀 Drift tuzağı: {duration:F1}s yavaşlatma (drift: {driftTime:F1}s).");
-    }
-
-    [TargetRpc]
-    private void TargetApplyDriftSlowdown(float accelerationMultiplier, float duration, float driftTime)
-    {
-        SfxPlayer.PlayUI(penaltyClip, raceSfxVolume);
-
-        GetComponent<CarController>()?.ApplyTrapSlowdown(accelerationMultiplier, duration);
-
-        if (LastLapTimeText == null) return;
-
-        StopAllCoroutines();
-        StartCoroutine(ShowSlowdownNotification(duration));
-    }
-
-    private System.Collections.IEnumerator ShowSlowdownNotification(float duration)
-    {
-        if (LastLapTimeText == null) yield break;
-
-        showingDriftWarning = true;
-        LastLapTimeText.color = Color.red;
-        LastLapTimeText.text = $"TUZAĞA YAKALANDIN! {duration:F1}s yavaşladın";
-
-        yield return new WaitForSeconds(4f);
-
-        showingDriftWarning = false;
-        LastLapTimeText.color = Color.white;
-        LastLapTimeText.text = lastLapDisplayText;
-    }
+    // ─── ESKİ DRIFT CEZA SİSTEMİ BURADAN KALDIRILDI ─────────────
+    // Sabotajcının 3. yeteneği yeniden tasarlandı: artık drift ölçüp
+    // gecikmeli ceza veren bir sistem yok. Yerine gelen "Motor Arızası"
+    // tuzağı (EngineFailureTrap.cs) kendi [TargetRpc]'lerini kendisi
+    // gönderiyor ve arabaya doğrudan CarController.ApplyEngineFailure()
+    // uyguluyor — bu yüzden buradaki ShowLiveDriftPenalty /
+    // ClearLiveDriftPenalty / ApplyDriftSlowdown metotlarına gerek kalmadı.
+    //
+    // Ekran yazısı da artık ScreenNotice ile ekranın ortasında gösteriliyor
+    // (LastLapTimeText'in köşesinde değil) — eski yerinde fark edilmiyordu.
 
     // ─── SyncVar Hook'ları (HER client'ta çalışır, HUD sadece owner'da) ──
     private void OnTotalCheckpointsChanged(int oldValue, int newValue) => UpdateCheckpointUI();

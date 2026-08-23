@@ -18,11 +18,11 @@ TagManager:
   - Drivable
   - Ground
   - Podium
-  - 
-  - 
-  - 
-  - 
-  - 
+  - Prop
+  - CarLaunched
+  - PropSmall
+  - PropFar
+  - PropTree
   - 
   - 
   - 

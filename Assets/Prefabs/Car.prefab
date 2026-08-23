@@ -5576,6 +5576,9 @@ MonoBehaviour:
   grassAccelerationGrip: 0.85
   grassDrag: 0.5
   grassDragFloorKmh: 150
+  engineFailureBrakeFloorKmh: 25
+  lockInputDuringEngineFailure: 1
+  keepSteeringDuringEngineFailure: 0
   coastingBrakeStrength: 35
   minSpeedForCoastingBrake: 5
   photoStudioMode: 0
@@ -5602,7 +5605,6 @@ MonoBehaviour:
   checkpointClip: {fileID: 0}
   checkpointVolume: 0.3
   lapCompleteClip: {fileID: 8300000, guid: 2ff348a0053c44041ae64613a88164c5, type: 3}
-  penaltyClip: {fileID: 8300000, guid: d71db967d89bff7419e37ef618f7c8b9, type: 3}
   raceSfxVolume: 0.5
 --- !u!114 &4490114615830032202
 MonoBehaviour:
@@ -5617,7 +5619,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Mirror::Mirror.NetworkIdentity
   sceneId: 0
-  _assetId: 0
+  _assetId: 1315678393
   serverOnly: 0
   visibility: 0
   hasSpawned: 0

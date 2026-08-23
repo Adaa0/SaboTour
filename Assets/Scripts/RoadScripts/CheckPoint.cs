@@ -43,10 +43,10 @@ public class Checkpoint : MonoBehaviour
                 CarController car = root.GetComponent<CarController>();
                 if (car != null)
                 {
-                    DriftTrap driftTrap = FindAnyObjectByType<DriftTrap>();
-                    if (driftTrap != null)
+                    EngineFailureTrap engineTrap = FindAnyObjectByType<EngineFailureTrap>();
+                    if (engineTrap != null)
                     {
-                        driftTrap.OnCarReachedCheckpoint(car, player, checkpointIndex);
+                        engineTrap.OnCarReachedCheckpoint(car, player, checkpointIndex);
                     }
                 }
             }
