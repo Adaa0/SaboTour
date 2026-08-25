@@ -169,10 +169,31 @@ public class LobbyManager : MonoBehaviour
     private void HandleSceneLoaded(UnityEngine.SceneManagement.Scene scene,
                                    UnityEngine.SceneManagement.LoadSceneMode mode)
     {
-        if (Instance != this) return;
+        // 🚨 BURADA ESKİDEN `if (Instance != this) return;` VARDI — "Tekrar
+        // Oyna"yı BOZAN ŞEY TAM OLARAK BUYDU.
+        //
+        // Lobi sahnesi yüklenirken o sahnenin KENDİ NetworkManager'ı da
+        // geliyor ve altındaki LobbyManager'ın Awake'i çalışıp `Instance`'ı
+        // ele geçiriyor. Mirror birazdan o fazlalık objeyi yok ediyor
+        // ("Multiple NetworkManagers detected" uyarısı bundan) — ama TAM O
+        // ARALIKTA `sceneLoaded` tetikleniyor ve YAŞAYAN kopya `Instance`
+        // artık kendisi olmadığı için erken dönüyordu. Sonuç: `ResetToLobby`
+        // hiç çalışmıyor, `LobbyPanel` yarış başlarken kapatıldığı yerde
+        // kapalı kalıyor ve oyuncu boş bir lobi sahnesine bakıyordu.
+        //
+        // Guard KALDIRILDI: hangi kopya çalışırsa çalışsın kendi
+        // referanslarını düzeltiyor. `ResetToLobby` idempotent, iki kopyanın
+        // birden çalışması zararsız — biri zaten hemen yok olacak.
 
-        // Ağ oturumu hâlâ açıksa yarıştayız/lobideyiz — dokunma.
-        if (NetworkServer.active || NetworkClient.active) return;
+        // YARIŞ sahnesi yüklendiyse lobiyi açma.
+        //
+        // ⚠️ ESKİDEN buradaki kural "ağ oturumu açıksa dokunma" idi. O kural
+        // "Tekrar Oyna" ile BOZULDU: lobiye dönerken oturum bilerek AÇIK
+        // kalıyor (grup dağılmasın diye), yani eski kontrol lobiyi hiç
+        // açmazdı. Artık sahnenin KENDİSİNE bakıyoruz — hem oturum kapanınca
+        // hem tekrar oyna ile dönünce doğru çalışıyor.
+        string gameScene = (NetworkManager.singleton as MyNetworkManager)?.GameSceneName;
+        if (!string.IsNullOrEmpty(gameScene) && scene.name == gameScene) return;
 
         ResetToLobby();
     }
@@ -218,19 +239,166 @@ public class LobbyManager : MonoBehaviour
         PlayerListText.text = sb.ToString();
     }
 
-    // ─── Loading Screen (LobbyPlayer'ın RPC'si buradan çağırır) ──
+    // ─── Loading Screen ──────────────────────────────────────────
+    // İKİ AYRI YERDEN ÇAĞRILIYOR (bilinçli, ikisi de gerekli):
+    //  1. LobbyPlayer.RpcShowLoadingScreen — host dahil herkese.
+    //  2. MyNetworkManager.OnClientChangeScene — client'ın sahne değiştirme
+    //     mesajını aldığı an. RPC'ye tek başına GÜVENMİYORUZ: ClientRpc
+    //     `SendToReadyObservers` ile gidiyor ve `ServerChangeScene` hemen
+    //     ardından `SetAllClientsNotReady()` çağırıyor — bu kadar dar bir
+    //     aralıkta sıraya güvenmek yerine ikinci bir garanti koyduk.
+    // Metot idempotent, iki kere çağrılması zararsız.
+
+    private bool loadingScreenVisible;
+
     public void ShowLoadingScreen()
     {
-        SfxPlayer.PlayUI(raceStartingClip, lobbyVolume);
+        // Ses SADECE ilk çağrıda — iki giriş noktası var, iki kere çalmasın.
+        if (!loadingScreenVisible)
+            SfxPlayer.PlayUI(raceStartingClip, lobbyVolume);
+
+        loadingScreenVisible = true;
+
+        // Bekleyen bir "gizle" işi varsa iptal et, yoksa yeni gösterdiğimiz
+        // ekranı eski coroutine kapatabilir.
+        if (hideRoutine != null) { StopCoroutine(hideRoutine); hideRoutine = null; }
 
         if (LobbyPanel != null) LobbyPanel.SetActive(false);
-        if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(true);
+        if (LoadingScreenPanel == null) return;
+
+        LoadingScreenPanel.SetActive(true);
+        MakeLoadingScreenOpaque();
+        BringCanvasToFront();
     }
 
-    // MyNetworkManager, client sahne yüklemesini bitirince bunu çağırır.
+    /// <summary>
+    /// Yükleme ekranının arkası TAM SİYAH olmalı.
+    ///
+    /// SEBEBİ SOMUT: sahnedeki panelin Image rengi (0,0,0, **alpha 0.95**)
+    /// olarak kaydedilmişti — yani arkadaki dünya %5 oranında görünüyordu.
+    /// Online Scene'in sabit kamerası kulenin altına bakıyor ve o görüntü
+    /// yükleme ekranının içinden sızıyordu. Kodla zorlamak, sahne dosyası
+    /// ileride tekrar değişse bile garanti veriyor.
+    /// </summary>
+    private void MakeLoadingScreenOpaque()
+    {
+        Image background = LoadingScreenPanel.GetComponent<Image>();
+        if (background == null) return;
+
+        Color c = background.color;
+        if (c.a >= 1f && c.r <= 0f && c.g <= 0f && c.b <= 0f) return;
+
+        background.color = new Color(0f, 0f, 0f, 1f);
+    }
+
+    /// <summary>
+    /// Lobi canvas'ını her şeyin ÜSTÜNE alır.
+    ///
+    /// NEDEN: Online Scene'de birden fazla Screen Space Overlay canvas var ve
+    /// HEPSİNİN `sortingOrder`'ı 0. Eşit sıra numarasında Unity'nin çizim
+    /// sırası hiyerarşiye/sahne sırasına bağlı — DontDestroyOnLoad'daki bir
+    /// canvas ile sahneden gelen canvas'lar arasında bu tamamen belirsiz.
+    /// Yükleme ekranının HUD'ın altında kalma ihtimalini tamamen kaldırıyoruz.
+    /// </summary>
+    private void BringCanvasToFront()
+    {
+        Canvas canvas = GetComponentInParent<Canvas>();
+        if (canvas == null) return;
+
+        if (canvas.sortingOrder < 500) canvas.sortingOrder = 500;
+    }
+
     public void HideLoadingScreen()
     {
+        if (hideRoutine != null) { StopCoroutine(hideRoutine); hideRoutine = null; }
+
+        loadingScreenVisible = false;
+
         if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(false);
+    }
+
+    // Yükleme ekranını "oyuncu hazır olunca" kapatan coroutine.
+    private Coroutine hideRoutine;
+
+    [Header("Yükleme Ekranı")]
+    [Tooltip("Oyuncu objesi geldikten sonra ekranın kapanması için beklenen ek süre — kameranın devralması bir-iki kare sürüyor.")]
+    [SerializeField] private float loadingSettleSeconds = 0.35f;
+
+    [Tooltip("Bu süre dolunca oyuncu hâlâ doğmamış olsa bile ekran kapanır. Takılı kalan yükleme ekranı, erken kapanandan daha kötü.")]
+    [SerializeField] private float loadingMaxWaitSeconds = 15f;
+
+    /// <summary>
+    /// ══ İKİ BUG'I BİRDEN DÜZELTİYOR (23 Ağustos 2026) ══
+    /// BELİRTİLER: (a) yükleme ekranı erken bitiyordu ve sabotajcı yarışa
+    /// geç başlamış gibi oluyordu, (b) bazen yükleme ekranı yerine
+    /// "kulenin altı" görünüyordu.
+    ///
+    /// TEK SEBEP: `MyNetworkManager.OnClientSceneChanged` ekranı SAHNE
+    /// YÜKLENİR YÜKLENMEZ kapatıyordu. Ama oyuncunun objesi o an henüz YOK:
+    /// yarışçılar `SpawnPlayerWhenTrackReady` ile pist üretilene kadar
+    /// (5 saniyeye kadar) bekletiliyor, sabotajcı da ondan sonra geliyor.
+    /// O boşlukta ekranda ne var? Online Scene'in SABİT Main Camera'sı —
+    /// yani sahnede nereye bakıyorsa orası. "Kule altı" tam olarak buydu.
+    ///
+    /// ÇÖZÜM: ekran, YEREL OYUNCU OBJESİ gelene kadar açık kalıyor. Objenin
+    /// `OnStartAuthority`'si kamerayı devralıyor (yarışçıda CarCam,
+    /// sabotajcıda FPCam), o yüzden bir de kısa bir oturma payı bırakıyoruz.
+    ///
+    /// ⏱️ Zaman aşımı ŞART: bir şey ters giderse oyuncu sonsuza kadar
+    /// yükleme ekranına bakmasın — takılı kalan ekran, erken kapanandan
+    /// daha kötü bir hata.
+    /// </summary>
+    public void HideLoadingScreenWhenPlayerReady()
+    {
+        if (LoadingScreenPanel == null) return;
+
+        if (hideRoutine != null) StopCoroutine(hideRoutine);
+        hideRoutine = StartCoroutine(HideWhenReadyRoutine());
+    }
+
+    private System.Collections.IEnumerator HideWhenReadyRoutine()
+    {
+        float waited = 0f;
+
+        // İKİ KOŞUL BİRDEN:
+        //  1. Kendi oyuncu objem doğdu mu (kameram devraldı mı).
+        //  2. Geri sayım KURULDU mu — yani SUNUCU tüm yarışçıların doğduğunu
+        //     gördü mü (RacePodiumManager.ServerTryArmCountdown).
+        //
+        // İkincisi olmadan şu oluyordu: hızlı yüklenen oyuncu ekranı kapatıp
+        // arabasının başında bekliyor, yavaş yüklenen (Multiplayer Play Mode'da
+        // 2. oyuncu her zaman ~2sn geç açılıyor) hâlâ yükleniyor. Şimdi ikisi
+        // de aynı anda "3"ü görüyor.
+        while (waited < loadingMaxWaitSeconds)
+        {
+            bool mineReady = NetworkClient.localPlayer != null;
+            bool everyoneReady = RacePodiumManager.CountdownArmed;
+
+            if (mineReady && everyoneReady) break;
+
+            waited += Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        if (waited >= loadingMaxWaitSeconds)
+        {
+            Debug.LogWarning($"[LobbyManager] {loadingMaxWaitSeconds}sn doldu — yükleme ekranı yine de " +
+                             $"kapatılıyor. (Kendi oyuncum: {(NetworkClient.localPlayer != null ? "var" : "YOK")}, " +
+                             $"geri sayım kuruldu mu: {RacePodiumManager.CountdownArmed}). " +
+                             "Spawn ya da pist üretimi tarafında bir sorun olabilir.");
+        }
+        else
+        {
+            // Kameranın devralması (OnStartAuthority) ve ilk karenin çizilmesi
+            // için küçük bir pay. Bu olmadan sahnenin sabit kamerası bir-iki
+            // kare görünebiliyor.
+            yield return null;
+            yield return new WaitForSecondsRealtime(loadingSettleSeconds);
+        }
+
+        loadingScreenVisible = false;
+        if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(false);
+        hideRoutine = null;
     }
 
     /// <summary>

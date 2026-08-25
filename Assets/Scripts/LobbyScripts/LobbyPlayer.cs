@@ -80,7 +80,7 @@ public class LobbyPlayer : NetworkBehaviour
 
     /// <summary>
     /// İsmi sunucuya yazar. 🚨 GELEN METNE GÜVENİLMİYOR: `Sanitize` burada
-    /// TEKRAR çağrılıyor. Client tarafındaki kutu zaten 20 karakterle
+    /// TEKRAR çağrılıyor. Client tarafındaki kutu zaten 12 karakterle
     /// sınırlıyor ama değiştirilmiş bir build istediğini gönderebilir —
     /// oyuncu listesi ve leaderboard TextMeshPro zengin metni işlediği için
     /// temizlenmemiş bir isim herkesin ekranını bozabilirdi.
@@ -140,11 +140,22 @@ public class LobbyPlayer : NetworkBehaviour
         if (players.Count < minPlayersToStart) return;
         if (players.Any(p => !p.IsReady)) return;
 
-        // ROL ATAMA: 2+ oyuncu varsa rastgele 1 kişi sabotajcı, geri kalanı
-        // yarışçı olur. Tek oyuncuyla test ediliyorsa (solo) sabotajcı YOK,
-        // herkes yarışçı sayılır — çünkü tek kişiyle hem araba hem kule
-        // aynı anda test edilemez.
-        int saboteurIndex = players.Count >= 2 ? Random.Range(0, players.Count) : -1;
+        // ROL ATAMA: 2+ oyuncu varsa 1 kişi sabotajcı, geri kalanı yarışçı
+        // olur. Tek oyuncuyla test ediliyorsa (solo) sabotajcı YOK, herkes
+        // yarışçı sayılır — çünkü tek kişiyle hem araba hem kule aynı anda
+        // test edilemez.
+        //
+        // 🔁 ARTIK RASTGELE DEĞİL, ROTASYONLU: seçim
+        // `MyNetworkManager.ChooseSaboteurIndex` içinde yapılıyor ve "henüz
+        // sabotajcı olmayanlar" arasından çekiliyor. Sebep: sabotajcı oyunun
+        // en ilgi çekici rolü ve saf rastgelelikte biri iki kez olurken
+        // başkası hiç olmayabiliyordu. Rotasyon bilgisi NetworkManager'da
+        // duruyor çünkü LobbyPlayer objeleri her sahne geçişinde yok oluyor.
+        MyNetworkManager rotationManager = NetworkManager.singleton as MyNetworkManager;
+
+        int saboteurIndex = rotationManager != null
+            ? rotationManager.ChooseSaboteurIndex(players.Select(p => p.connectionToClient).ToList())
+            : (players.Count >= 2 ? Random.Range(0, players.Count) : -1);
 
         var roleMap = new System.Collections.Generic.Dictionary<NetworkConnectionToClient, bool>();
         for (int i = 0; i < players.Count; i++)

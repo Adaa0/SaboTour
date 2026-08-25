@@ -57,6 +57,56 @@ public class TrackGenerator : MonoBehaviour
     [Tooltip("Kenarlığa çarpışma yüzeyi eklensin mi? (Araba üstünden geçerken sarsılsın diye.)")]
     public bool curbCollider = true;
 
+    [Header("Viraj Yarıçapı (Kenarlık Bozulmasını Önler)")]
+    [Tooltip("AÇIKKEN: her virajın yarıçapı ölçülür. Yol + kenarlık sığmayacak " +
+             "kadar dar bir viraj varsa önce köşe yuvarlatması otomatik " +
+             "artırılır; o da yetmezse pist reddedilip yeni bir seed denenir.\n\n" +
+             "NEDEN GEREKLİ: Yol ve kenarlık, orta çizginin İKİ YANINA " +
+             "(roadWidth/2 + curbWidth) kadar uzayan şeritler. Virajın yarıçapı " +
+             "bu mesafeden küçükse virajın İÇ tarafındaki şerit kendi üstüne " +
+             "KATLANIYOR — ekranda burulmuş, ters dönmüş kenarlık olarak " +
+             "görünüyor. Miter join bunu çözmez, çünkü sorun hizalama değil " +
+             "şeridin kendisiyle kesişmesi.")]
+    public bool enforceMinCornerRadius = true;
+
+    [Tooltip("Virajın en dar noktasındaki orta çizgi yarıçapı, " +
+             "(yolun yarısı + kenarlık genişliği) değerinin EN AZ bu kadar " +
+             "üstünde olmalı (metre). Büyütürsen virajlar daha ferah olur ama " +
+             "daha çok seed elenir; küçültürsen keskin virajlar artar, " +
+             "kenarlık daha sıkışık görünür.")]
+    [Range(0f, 30f)] public float cornerRadiusMargin = 5f;
+
+    [Tooltip("Dar bir viraj bulununca köşe yuvarlatması (cornerSmoothness) " +
+             "bu değere kadar otomatik artırılabilir. 0.5 üstü olamaz — " +
+             "iki komşu viraj aralarındaki düzlüğü paylaştığı için 0.5+0.5 " +
+             "aynı düzlüğü ikinci kez tüketip birbirine girerdi.")]
+    [Range(0.3f, 0.49f)] public float maxCornerSmoothness = 0.49f;
+
+    [Header("Pist Uzunluğu Tutarlılığı")]
+    [Tooltip("AÇIKKEN: pist üretildikten sonra toplam uzunluğu ölçülür. " +
+             "Hedef aralığın dışındaysa (targetTrackLength ± toleranceı) o " +
+             "seed çöpe atılıp yenisi denenir — aynı 'viraj yarıçapı' " +
+             "güvenlik ağıyla BİREBİR aynı desen.\n\n" +
+             "NEDEN GEREKLİ: 600 pistlik ölçümde doğal uzunluk dağılımı " +
+             "2433-4306 m arası çıktı (~%76 uçtan uca fark). Sabotajcının " +
+             "kazanma süresi pist uzunluğuna bakmadan sabit olduğu için bu " +
+             "fark doğrudan 'şansına kalmış' bir zorluk farkına dönüşüyordu " +
+             "— kısa pist düşen yarışçı kolay kazanıyor, uzun pist düşen " +
+             "zorlanıyordu. Bu, o farkı üretim aşamasında küçültüyor.")]
+    public bool enforceTrackLength = true;
+
+    [Tooltip("Hedef pist uzunluğu (metre). Varsayılan, 600 pistlik ölçümün " +
+             "ortalaması (~3418 m) — değiştirirsen ölçüm de geçersiz olur.")]
+    public float targetTrackLength = 3400f;
+
+    [Tooltip("Kabul edilen sapma: hedefin ±yüzde kaçı. Ölçülen ödünleşim " +
+             "(600 pist): ±20 → %4 reddedilir (ort. 1.04 deneme), " +
+             "±15 → %8 (1.08 deneme), ±10 → %23 (1.30 deneme), " +
+             "±8 → %35 (1.53 deneme). Küçültürsen pistler daha tek tip " +
+             "olur ama üretim biraz daha fazla seed dener (maliyeti hâlâ " +
+             "milisaniyeler mertebesinde).")]
+    [Range(5f, 30f)] public float trackLengthTolerancePercent = 15f;
+
     [Header("Merkez Boşluğu (Sabotajcı Kulesi)")]
     [Tooltip("Pist üretildikten sonra dünya merkezine (0,0,0) ortalanır ve yolun merkezden uzak kalması garanti edilir — kule oraya dikilecek.")]
     public bool keepCenterClear = true;
@@ -206,10 +256,20 @@ public class TrackGenerator : MonoBehaviour
 
             if (!ValidateTrackAnglesAndDistances(basePoints)) continue;
 
+            // Virajlar yol + kenarlık genişliğine göre yeterince geniş mi?
+            // Yuvarlatmayı sonuna kadar açsak bile sığmıyorsa bu seed çöpe
+            // gidiyor — o pistte kenarlık kaçınılmaz olarak katlanırdı.
+            if (!HasSafeCornerRadii(basePoints)) continue;
+
             // Köşeleri Bezier ile yumuşat. Merkez boşluğu kontrolü BU son hal
             // üzerinde yapılmalı — yol mesh'i de, minimap da bu noktaları
             // kullanıyor, yani gerçekte görünen yol bu.
             List<Vector2> curved = CurveCorners(basePoints);
+
+            // Uzunluk kontrolü CENTER CLEARANCE'DAN ÖNCE: ikisi de O(n) ama
+            // bu daha ucuz (tek toplama), reddedilecek adaylarda daha pahalı
+            // olan segment-mesafe taramasını (HasCenterClearance) atlatıyor.
+            if (enforceTrackLength && !HasAcceptableLength(curved)) continue;
 
             if (keepCenterClear)
             {
@@ -487,6 +547,116 @@ public class TrackGenerator : MonoBehaviour
         return angle < minTurnAngle || angle > maxTurnAngle;
     }
 
+    /// <summary>
+    /// Yolun orta çizgisinin virajda EN AZ ne kadar yarıçapa sahip olması
+    /// gerektiği. Yol mesh'i orta çizginin iki yanına roadWidth/2, kenarlık
+    /// ise onun da dışına curbWidth kadar uzuyor — yani en dıştaki vertex
+    /// orta çizgiden (roadWidth/2 + curbWidth) uzakta. Virajın yarıçapı bu
+    /// mesafeden küçükse virajın İÇ tarafındaki şerit kendi üstüne katlanır.
+    /// Üstüne bir de güvenlik payı (cornerRadiusMargin) ekleniyor, çünkü tam
+    /// sınırda katlanmıyor ama iç kenar bir noktaya sıkışıp çirkin duruyor.
+    /// </summary>
+    private float RequiredCornerRadius =>
+        roadWidth * 0.5f + (generateCurbs ? curbWidth : 0f) + cornerRadiusMargin;
+
+    /// <summary>
+    /// Bir köşenin EN DAR noktasındaki eğrilik yarıçapını, yuvarlatma
+    /// katsayısı s = 1 içinmiş gibi döndürür.
+    ///
+    /// NEDEN BU İŞE YARIYOR: `CurveCorners` köşeyi kuadratik Bezier ile
+    /// çiziyor ve iki bacağını da s ile ölçekliyor. Kuadratik Bezier'in
+    /// yarıçapı s ile TAM DOĞRU ORANTILI — yani gerçek yarıçap = s × (bu
+    /// fonksiyonun döndürdüğü değer). Bu sayede "istediğim yarıçap için s
+    /// kaç olmalı" sorusu tek bölmeyle cevaplanıyor, deneme yanılma yok.
+    ///
+    /// MATEMATİK: Kuadratik Bezier'de ikinci türev sabit, bu yüzden eğrilik
+    /// sadece hızın (birinci türev) en küçük olduğu yerde en büyük olur.
+    /// R_min = 2·d³ / |u × v| — burada u ve v köşenin iki bacağı, d ise
+    /// orijinin [u, v] doğru parçasına olan uzaklığı (yani |B'(t)|/2'nin
+    /// alabildiği en küçük değer).
+    /// </summary>
+    private static float CornerRadiusPerSmoothness(Vector2 prev, Vector2 curr, Vector2 next)
+    {
+        Vector2 u = curr - prev;
+        Vector2 v = next - curr;
+
+        float cross = Mathf.Abs(u.x * v.y - u.y * v.x);
+        if (cross < 0.0001f) return 1e9f;   // düz gidiş — viraj yok, yarıçap sonsuz
+
+        Vector2 w = v - u;
+        float t = w.sqrMagnitude > 0.0001f
+            ? Mathf.Clamp01(Vector2.Dot(-u, w) / w.sqrMagnitude)
+            : 0f;
+        float d = (u + w * t).magnitude;
+
+        return 2f * d * d * d / cross;
+    }
+
+    /// <summary>
+    /// Bu köşe için kullanılacak yuvarlatma katsayısı. Taban değer
+    /// `cornerSmoothness`; viraj yol+kenarlığın sığamayacağı kadar darsa
+    /// gereken değere kadar YÜKSELTİLİYOR (asla düşürülmüyor — geniş
+    /// virajlar bugüne kadarki görünümünü aynen koruyor).
+    /// </summary>
+    private float SmoothnessForCorner(Vector2 prev, Vector2 curr, Vector2 next)
+    {
+        if (!enforceMinCornerRadius) return cornerSmoothness;
+
+        float radiusPerUnit = CornerRadiusPerSmoothness(prev, curr, next);
+        if (radiusPerUnit <= 0.0001f) return cornerSmoothness;
+
+        float needed = RequiredCornerRadius / radiusPerUnit;
+        float upperLimit = Mathf.Min(0.49f, Mathf.Max(cornerSmoothness, maxCornerSmoothness));
+
+        return Mathf.Clamp(needed, cornerSmoothness, upperLimit);
+    }
+
+    /// <summary>
+    /// Yuvarlatmayı sonuna kadar açsak bile yol+kenarlığın sığamayacağı bir
+    /// viraj var mı? Varsa bu aday pist reddedilip yeni seed deneniyor
+    /// (`CreateRacetrack` içindeki döngü zaten bunun için var).
+    ///
+    /// Kontrol Bezier'e çevirmeden ÖNCE, ham kontrol noktaları üzerinde
+    /// yapılıyor — kötü bir aday için yüzlerce nokta üretmeye gerek yok.
+    /// </summary>
+    private bool HasSafeCornerRadii(List<Vector2> points)
+    {
+        if (!enforceMinCornerRadius || points == null || points.Count < 3) return true;
+
+        float required = RequiredCornerRadius;
+        float upperLimit = Mathf.Min(0.49f, Mathf.Max(cornerSmoothness, maxCornerSmoothness));
+
+        for (int i = 0; i < points.Count; i++)
+        {
+            Vector2 prev = points[(i - 1 + points.Count) % points.Count];
+            Vector2 next = points[(i + 1) % points.Count];
+
+            if (CornerRadiusPerSmoothness(prev, points[i], next) * upperLimit < required)
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Pistin toplam uzunluğu hedef aralığın içinde mi? `points` kapalı bir
+    /// döngü (halka) varsayılıyor — son nokta ilk noktaya bağlanıyor.
+    /// </summary>
+    private bool HasAcceptableLength(List<Vector2> points)
+    {
+        if (points == null || points.Count < 3) return false;
+
+        float total = 0f;
+        for (int i = 0; i < points.Count; i++)
+            total += Vector2.Distance(points[i], points[(i + 1) % points.Count]);
+
+        float tolerance = trackLengthTolerancePercent / 100f;
+        float lo = targetTrackLength * (1f - tolerance);
+        float hi = targetTrackLength * (1f + tolerance);
+
+        return total >= lo && total <= hi;
+    }
+
     private List<Vector2> CurveCorners(List<Vector2> points)
     {
         if (points == null || points.Count < 3) return new List<Vector2>(points);
@@ -498,8 +668,12 @@ public class TrackGenerator : MonoBehaviour
             Vector2 curr = points[i];
             Vector2 next = points[(i + 1) % points.Count];
 
-            Vector2 start = Vector2.Lerp(curr, prev, cornerSmoothness);
-            Vector2 end = Vector2.Lerp(curr, next, cornerSmoothness);
+            // Yuvarlatma artık her köşede AYNI değil: dar virajlarda kenarlık
+            // katlanmasın diye otomatik açılıyor (bkz. SmoothnessForCorner).
+            float smoothness = SmoothnessForCorner(prev, curr, next);
+
+            Vector2 start = Vector2.Lerp(curr, prev, smoothness);
+            Vector2 end = Vector2.Lerp(curr, next, smoothness);
 
             for (int j = 0; j <= cornerSegments; j++)
             {
@@ -835,6 +1009,24 @@ public class TrackGenerator : MonoBehaviour
             {
                 int baseIndex = sideStartIndex + i * 2;
                 int nextIndex = sideStartIndex + (i + 1) * 2;
+
+                // GÜVENLİK AĞI — KATLANMIŞ PARÇAYI HİÇ ÇİZME.
+                // Viraj yarıçapı offset mesafesinden küçükse (bkz.
+                // enforceMinCornerRadius) kenarlığın İÇ taraftaki kenarı geri
+                // dönüp kendi üstüne biniyor ve ekranda burulmuş bir papyon
+                // gibi görünüyor. O parçanın yön vektörü orta çizginin gidiş
+                // yönüne TERS düşer — bunu yakalayıp dörtgeni atlıyoruz.
+                // Kenarlıkta minik bir boşluk kalması, burulmuş bir kenarlıktan
+                // çok daha az göze batıyor.
+                //
+                // Vertex'ler yerinde duruyor, sadece üçgen üretilmiyor —
+                // yani yol mesh'iyle ortak olan offset matematiği bozulmuyor.
+                Vector3 flow = points[(i + 1) % points.Count] - points[i];
+                Vector3 innerStep = vertices[nextIndex] - vertices[baseIndex];
+                Vector3 outerStep = vertices[nextIndex + 1] - vertices[baseIndex + 1];
+
+                if (Vector3.Dot(innerStep, flow) < 0f || Vector3.Dot(outerStep, flow) < 0f)
+                    continue;
 
                 // Sol ve sağ kenarlığın üçgen sarım yönü (winding) TERS olmalı,
                 // yoksa yüzü aşağı bakar ve üstten bakınca görünmez olur

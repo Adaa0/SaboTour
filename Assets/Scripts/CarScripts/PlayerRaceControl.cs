@@ -129,6 +129,42 @@ public class PlayerRaceController : NetworkBehaviour
             AllPlayers.Add(this);
     }
 
+    // Tanıtım ipucu OTURUMDA BİR KEZ. Static olmak zorunda: araba her yarışta
+    // yeniden doğuyor, instance alanı hatırlamaz.
+    private static bool roleHintShown;
+
+    // İpucu "BAŞLA!" yazısının hemen ardından çıksın diye küçük bir gecikme.
+    private float hintTimer = -1f;
+
+    /// <summary>
+    /// Yarışçının ilk yarışında kısa bir kontrol hatırlatması. Sabotajcıdaki
+    /// ipucunun karşılığı — ama daha kısa, çünkü "araba, gaz ver" zaten
+    /// sezgisel; burada asıl söylenmesi gereken şey rakibin ne yaptığı.
+    ///
+    /// ⚠️ NEDEN SPAWN ANINDA DEĞİL: geri sayım da `ScreenNotice` kullanıyor
+    /// ve aynı yazı alanını paylaşıyorlar. Spawn'da gösterseydik "3" hemen
+    /// üstüne yazardı. Bu yüzden ipucu yarış BAŞLADIKTAN sonra çıkıyor.
+    /// </summary>
+    private void UpdateRoleHint()
+    {
+        if (roleHintShown) return;
+        if (!RacePodiumManager.RaceStarted) return;
+
+        if (hintTimer < 0f) hintTimer = 1.4f;   // "BAŞLA!" okunacak kadar bekle
+
+        hintTimer -= Time.deltaTime;
+        if (hintTimer > 0f) return;
+
+        roleHintShown = true;
+
+        ScreenNotice.Show(
+            "YARIŞÇISIN\n" +
+            "W/S gaz-fren · A/D direksiyon · Space el freni\n" +
+            "Turlarını bitir. Sabotajcı checkpoint'lere tuzak kuruyor —\n" +
+            "pistten çıkarsan otomatik geri dönersin. Detay için ESC.",
+            8f);
+    }
+
     public override void OnStopClient()
     {
         base.OnStopClient();
@@ -203,8 +239,27 @@ public class PlayerRaceController : NetworkBehaviour
     // client'lara yayar.
     void Update()
     {
-        if (isServer && timerRunning && isRacingSynced)
-            totalTime += Time.deltaTime;
+        // Sadece kendi ekranımda: rol ipucu (yarış başladıktan sonra).
+        if (isOwned) UpdateRoleHint();
+
+        if (!isServer || !isRacingSynced) return;
+
+        // ══ SAAT ARTIK YARIŞ BAŞLANGICINA BAĞLI ══
+        // ESKİDEN: `timerRunning` ancak yarışçı checkpoint 0'ı GEÇİNCE true
+        // oluyordu. Sabotajcının kazanma süresi ise sahne yüklenir yüklenmez
+        // işlemeye başlıyordu — yani iki saat AYRI ANLARDA başlıyor ve fark
+        // yarışçının aleyhine oluyordu (spawn + araçların yere oturması +
+        // başlangıç çizgisine kadar sürme kadar geriden başlıyordu).
+        // Artık ikisi de RacePodiumManager'ın geri sayımına bağlı.
+        if (!RacePodiumManager.RaceStarted) return;
+
+        if (!timerRunning)
+        {
+            timerRunning = true;
+            currentLapStartTime = totalTime;
+        }
+
+        totalTime += Time.deltaTime;
     }
 
     // ─── Checkpoint'e Ulaşıldı (Command) ────────────────────────
@@ -218,13 +273,13 @@ public class PlayerRaceController : NetworkBehaviour
     {
         if (!isRacingSynced || totalCheckpoints <= 0) return;
 
+        // Yarışın EN BAŞINDAKİ ilk temas mı (henüz hiç checkpoint geçilmedi).
+        // Aşağıda tur sayacının yanlışlıkla artmasını engellemek için lazım.
+        //
+        // NOT: Saat artık burada BAŞLAMIYOR — yarış saati geri sayım bitince
+        // başlıyor (bkz. Update). Eskiden ilk checkpoint temasında başlıyordu
+        // ve sabotajcının saatiyle uyuşmuyordu.
         bool isRaceStartTouch = currentCheckpoint == -1;
-
-        if (!timerRunning && isRaceStartTouch)
-        {
-            timerRunning = true;
-            currentLapStartTime = totalTime;
-        }
 
         // Sıra dışı checkpoint'i yok say (hile/atlama koruması).
         if (index != (currentCheckpoint + 1) % totalCheckpoints) return;
@@ -244,9 +299,30 @@ public class PlayerRaceController : NetworkBehaviour
 
             TargetLapCompleted(lapTime);
 
+            // SON TUR BİLDİRİMİ — yarış oyunlarının klasiği ve duygusal
+            // getirisi maliyetinin kat kat üstünde.
+            //
+            // KOŞUL: bu turu bitirdikten sonra geriye TAM OLARAK bir tur
+            // kaldıysa. Örnek (maxLaps = 3): currentLap 2 olduğunda son tura
+            // giriliyor. Yarışı bitiren son turda (currentLap == maxLaps)
+            // tetiklenmiyor, çünkü orada zaten ServerFinishRace çalışıyor.
+            if (currentLap == maxLaps - 1)
+                TargetFinalLap();
+
             if (currentLap >= maxLaps)
                 ServerFinishRace();
         }
+    }
+
+    /// <summary>
+    /// SADECE son tura giren yarışçının kendi ekranında çalışır (TargetRpc).
+    /// Diğer yarışçılara gönderilmiyor — herkes kendi turunu ayrı zamanlarda
+    /// bitiriyor, ortak bir bildirim olsaydı ekran sürekli yazı yağardı.
+    /// </summary>
+    [TargetRpc]
+    private void TargetFinalLap()
+    {
+        ScreenNotice.Show("SON TUR!", 2.5f);
     }
 
     [Server]

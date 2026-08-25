@@ -18,6 +18,14 @@ public class MyNetworkManager : NetworkManager
     [Tooltip("Gerçek yarış sahnesinin adı. Aktif sahne bu değilse, oyuncular lobide sayılır.")]
     [SerializeField] private string gameSceneName = "Online Scene";
 
+    /// <summary>
+    /// Yarış sahnesinin adı. `LobbyManager` bunu okuyup "yüklenen sahne
+    /// yarış mı lobi mi" ayrımını yapıyor — "Tekrar Oyna" ile lobiye
+    /// dönüldüğünde ağ oturumu HÂLÂ AÇIK olduğu için, eski "oturum kapalıysa
+    /// lobiyi aç" kuralı tek başına yetmiyor.
+    /// </summary>
+    public string GameSceneName => gameSceneName;
+
     [Header("Sabotajcı")]
     [Tooltip("Sabotajcı rolüne seçilen oyuncunun aldığı karakter prefabı (araba değil, kule içinde yürüyen 1st person karakter).")]
     [SerializeField] private GameObject saboteurPrefab;
@@ -46,6 +54,59 @@ public class MyNetworkManager : NetworkManager
     // olduğu için isimler burada saklanıp Online Scene'de araca aktarılıyor —
     // rol ve renkle birebir aynı desen.
     private Dictionary<NetworkConnectionToClient, string> nameAssignments = new();
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  SABOTAJCI ROL ROTASYONU (23 Ağustos 2026)
+    // ═══════════════════════════════════════════════════════════════════
+    //
+    // SORUN: Sabotajcı tamamen RASTGELE seçiliyordu. 4 kişilik bir grupta
+    // biri arka arkaya iki kez sabotajcı olurken başkası hiç olmayabiliyordu
+    // — ve sabotajcı oyunun en ilgi çekici rolü. Playtest'te duyulacak en
+    // tahmin edilebilir şikayet buydu.
+    //
+    // ÇÖZÜM: "Henüz sabotajcı olmayanlar" arasından seçiyoruz. Herkes bir
+    // kez olduysa liste sıfırlanıp yeni tur başlıyor. Yani 4 kişilik grupta
+    // 4 yarışta herkes tam olarak bir kez sabotajcı oluyor.
+    //
+    // NEDEN BURADA DURUYOR: NetworkManager DontDestroyOnLoad — "Tekrar Oyna"
+    // ile lobiye dönülüp yeni yarış başladığında bu bilgi hayatta kalıyor.
+    // LobbyPlayer objeleri her sahne geçişinde yok oluyor, orada tutulamazdı.
+    // (Rol/renk/isim taşımasıyla birebir aynı gerekçe.)
+    private readonly HashSet<NetworkConnectionToClient> pastSaboteurs = new();
+
+    /// <summary>
+    /// Sabotajcı olacak oyuncunun indeksini seçer ve kaydeder.
+    /// Tek oyuncu varsa -1 döner (solo testte sabotajcı YOK, herkes yarışçı).
+    /// </summary>
+    public int ChooseSaboteurIndex(List<NetworkConnectionToClient> connections)
+    {
+        if (connections == null || connections.Count < 2) return -1;
+
+        // Ölü bağlantıları temizle — oyundan çıkanlar birikmesin.
+        pastSaboteurs.RemoveWhere(c => c == null || !connections.Contains(c));
+
+        // Henüz sabotajcı olmamışları topla.
+        List<int> candidates = new();
+        for (int i = 0; i < connections.Count; i++)
+            if (!pastSaboteurs.Contains(connections[i])) candidates.Add(i);
+
+        // Herkes bir kez olduysa yeni tur: listeyi sıfırla, hepsi tekrar aday.
+        if (candidates.Count == 0)
+        {
+            pastSaboteurs.Clear();
+            for (int i = 0; i < connections.Count; i++) candidates.Add(i);
+
+            Debug.Log("[MyNetworkManager] Herkes bir kez sabotajcı oldu — rotasyon sıfırlandı.");
+        }
+
+        int chosen = candidates[Random.Range(0, candidates.Count)];
+        pastSaboteurs.Add(connections[chosen]);
+
+        Debug.Log($"[MyNetworkManager] Sabotajcı seçildi: {connections.Count} oyuncudan " +
+                  $"{candidates.Count} aday arasından (rotasyon).");
+
+        return chosen;
+    }
 
     public void SetNameAssignments(Dictionary<NetworkConnectionToClient, string> assignments)
     {
@@ -96,6 +157,7 @@ public class MyNetworkManager : NetworkManager
         roleAssignments.Clear();
         colorAssignments.Clear();
         nameAssignments.Clear();
+        pastSaboteurs.Clear();   // yeni oturum = rotasyon sıfırdan
     }
 
     public override void OnStopClient()
@@ -357,12 +419,58 @@ public class MyNetworkManager : NetworkManager
     /// </summary>
     public int RacerCount { get; private set; } = 1;
 
+    /// <summary>
+    /// Client, "sahne değiştir" mesajını aldığı ANDA yükleme ekranını açar.
+    ///
+    /// 🚨 NEDEN RPC YETMİYOR: `LobbyPlayer.RpcShowLoadingScreen()` hemen
+    /// ardından `ServerChangeScene` çağrılıyor, o da ilk iş olarak
+    /// `NetworkServer.SetAllClientsNotReady()` yapıyor. ClientRpc ise
+    /// `SendToReadyObservers` ile gidiyor — yani mesajın çıkması ile
+    /// client'ların "hazır değil" işaretlenmesi arasında çok dar bir aralık
+    /// var. Bu kadar dar bir sıraya güvenmek yerine ikinci bir giriş noktası
+    /// koyduk; bu callback sahne değiştiren HER client'ta kesin çalışıyor.
+    ///
+    /// (Host'ta bu callback çalışmıyor — host sahne mesajını kendine
+    /// göndermiyor — ama host RPC'yi yerel olarak zaten alıyor. İkisi
+    /// birlikte herkesi kapsıyor. `ShowLoadingScreen` idempotent.)
+    /// </summary>
+    public override void OnClientChangeScene(string newSceneName, SceneOperation sceneOperation, bool customHandling)
+    {
+        base.OnClientChangeScene(newSceneName, sceneOperation, customHandling);
+
+        // Sadece OYUNA girerken — ana menüye dönerken yükleme ekranı açılmasın.
+        if (newSceneName != null && newSceneName.Contains(gameSceneName) && LobbyManager.Instance != null)
+            LobbyManager.Instance.ShowLoadingScreen();
+    }
+
     public override void OnClientSceneChanged()
     {
         base.OnClientSceneChanged();
 
-        if (LobbyManager.Instance != null)
-            LobbyManager.Instance.HideLoadingScreen();
+        if (LobbyManager.Instance == null) return;
+
+        bool intoGameScene =
+            UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == gameSceneName;
+
+        if (intoGameScene)
+        {
+            // 🚨 ARTIK HEMEN KAPATMIYORUZ. Sahnenin yüklenmiş olması, oyuncunun
+            // hazır olması demek DEĞİL: yarışçılar pist üretilene kadar (5sn'ye
+            // kadar) bekletiliyor, sabotajcı da ondan sonra geliyor. Aradaki
+            // boşlukta ekranda Online Scene'in sabit Main Camera'sı görünüyordu.
+            // Detay: LobbyManager.HideLoadingScreenWhenPlayerReady
+            LobbyManager.Instance.HideLoadingScreenWhenPlayerReady();
+        }
+        else
+        {
+            // LOBİYE DÖNÜŞ ("Tekrar Oyna" ya da oturum kapanması).
+            // İKİNCİ GÜVENLİK AĞI: LobbyManager'ın kendi `sceneLoaded`
+            // aboneliği de bunu yapıyor, ama o abonelik sahne geçişinde
+            // hangi kopyanın yaşadığına bağlı. Buradan çağırmak, hangi
+            // LobbyManager hayatta kalırsa kalsın lobi ekranının açılmasını
+            // garantiliyor. `ResetToLobby` idempotent.
+            LobbyManager.Instance.ResetToLobby();
+        }
     }
 
     private IEnumerator SpawnPlayerWhenTrackReady(NetworkConnectionToClient conn)

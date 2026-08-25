@@ -72,6 +72,10 @@ public class RacerMinimapHUD : MonoBehaviour
     [SerializeField] private float checkpointIconSize = 11f;
     [Tooltip("AÇIK: görüş alanının dışındaki arabalar kaybolmak yerine minimap'in kenarına yapışıp yönlerini gösterir (küçültülmüş halde). KAPALI: sadece yakındakiler görünür.")]
     [SerializeField] private bool clampOffscreenCars = true;
+
+    [Tooltip("Sıradaki checkpoint görüş alanının dışındaysa minimap kenarına " +
+             "yapıştırılsın mı — pistten çıkınca nereye gideceğini gösterir.")]
+    [SerializeField] private bool clampNextCheckpoint = true;
     [Tooltip("Kenara yapışan (uzaktaki) arabaların ikonu bu oranda küçülür — yakındakilerle karışmasın diye.")]
     [Range(0.3f, 1f)][SerializeField] private float offscreenIconScale = 0.65f;
 
@@ -99,6 +103,10 @@ public class RacerMinimapHUD : MonoBehaviour
     // hatırı sayılır bir israf olurdu.
     private readonly Dictionary<PlayerRaceController, Image> carIcons = new();
     private readonly List<Image> checkpointIcons = new();
+
+    // Sıradaki checkpoint görüş alanı dışındayken kenarda gösterilen işaret.
+    // Dönen harita katmanının DIŞINDA duruyor (bkz. UpdateNextCheckpointPointer).
+    private Image nextCheckpointPointer;
 
     // Checkpoint vurgusu sadece SIRA DEĞİŞTİĞİNDE yeniden yazılıyor.
     private int highlightedCheckpoint = -999;
@@ -187,6 +195,7 @@ public class RacerMinimapHUD : MonoBehaviour
 
         UpdateMapTransform(carPos, yaw);
         UpdateCheckpointIcons();
+        UpdateNextCheckpointPointer(carPos, yaw);
         UpdateCarIcons(carPos, yaw);
         UpdatePlayerArrowColor();
     }
@@ -356,6 +365,74 @@ public class RacerMinimapHUD : MonoBehaviour
             // Harita dönerken checkpoint noktaları da dönüyor; ikonun KENDİSİ
             // yuvarlak olduğu için bu görünmüyor, ters çevirmeye gerek yok.
         }
+    }
+
+    /// <summary>
+    /// SIRADAKİ CHECKPOINT GÖRÜŞ ALANININ DIŞINDAYSA KENARA YAPIŞTIRIR.
+    ///
+    /// NEDEN GEREKLİ: Checkpoint ikonları dönen harita katmanının (mapContent)
+    /// çocuğu, yani görüş yarıçapının dışına çıkınca ekrandan kayıp gidiyorlar.
+    /// Rakip arabalar için bu sorun zaten çözülmüştü (`clampOffscreenCars`) ama
+    /// asıl yön bilgisi olan "sıradaki checkpoint" için çözülmemişti — oyuncu
+    /// pistten çıkıp kaybolduğunda nereye gideceğini gösteren hiçbir şey
+    /// kalmıyordu.
+    ///
+    /// İkon maskenin içinde ama DÖNEN KATMANIN DIŞINDA (carIconLayer) duruyor:
+    /// konumu elle hesaplanıyor, dönen katmanın çocuğu olsaydı bu hesap
+    /// bozulurdu — araba ikonlarındaki gerekçenin aynısı.
+    ///
+    /// SADECE dışarıdayken görünüyor: içerideyken haritadaki sarı nokta zaten
+    /// yerini gösteriyor, ikinci bir işaret görsel gürültü olurdu.
+    /// </summary>
+    private void UpdateNextCheckpointPointer(Vector3 myPos, float myYaw)
+    {
+        if (!clampNextCheckpoint || carIconLayer == null || localRace == null) return;
+
+        List<Transform> checkpoints = checkpointManager != null ? checkpointManager.checkpoints : null;
+        if (checkpoints == null || checkpoints.Count == 0)
+        {
+            HideNextCheckpointPointer();
+            return;
+        }
+
+        int total = checkpoints.Count;
+        int next = ((localRace.CurrentCheckpoint + 1) % total + total) % total;
+
+        Transform target = checkpoints[next];
+        if (target == null)
+        {
+            HideNextCheckpointPointer();
+            return;
+        }
+
+        float edge = radiusPixels - checkpointIconSize * 0.5f;
+        Vector3 pos = target.position;
+        Vector2 delta = Rotate(new Vector2(pos.x - myPos.x, pos.z - myPos.z) * pixelsPerMeter, myYaw);
+
+        if (delta.magnitude <= edge)
+        {
+            HideNextCheckpointPointer();
+            return;
+        }
+
+        if (nextCheckpointPointer == null)
+        {
+            nextCheckpointPointer = CreateIcon(carIconLayer, "NextCheckpointPointer",
+                                               checkpointIconSprite, nextCheckpointColor,
+                                               checkpointIconSize * nextCheckpointScale);
+        }
+
+        if (!nextCheckpointPointer.gameObject.activeSelf)
+            nextCheckpointPointer.gameObject.SetActive(true);
+
+        nextCheckpointPointer.color = nextCheckpointColor;
+        nextCheckpointPointer.rectTransform.anchoredPosition = delta.normalized * edge;
+    }
+
+    private void HideNextCheckpointPointer()
+    {
+        if (nextCheckpointPointer != null && nextCheckpointPointer.gameObject.activeSelf)
+            nextCheckpointPointer.gameObject.SetActive(false);
     }
 
     private void UpdateCarIcons(Vector3 myPos, float myYaw)

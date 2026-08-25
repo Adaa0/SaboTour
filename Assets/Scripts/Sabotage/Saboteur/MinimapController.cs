@@ -495,6 +495,23 @@ public class MinimapController : MonoBehaviour
                 int baseIndex = sideStartIndex + i * 2;
                 int nextIndex = sideStartIndex + (i + 1) * 2;
 
+                // KATLANMIŞ PARÇAYI ÇİZME — gerçek pistteki
+                // TrackGenerator.GenerateCurbMesh ile aynı korumanın minimap
+                // hali. Viraj yarıçapı offset mesafesinden küçük kalınca
+                // kenarlığın iç kenarı geri dönüp kendi üstüne biniyor.
+                //
+                // BURADA DAHA SIK OLUYOR: minimap kenarlığı okunabilsin diye
+                // roadWidthMultiplier ve curbWidthMultiplier ile kalınlaştırılıyor,
+                // yani offset mesafesi gerçek pisttekinin birkaç katı — gerçek
+                // pistte sorunsuz duran bir viraj minimapte katlanabiliyor.
+                Vector3 flow = WorldToMapLocal(trackPoints[(i + 1) % count], curbHeight)
+                             - WorldToMapLocal(trackPoints[i], curbHeight);
+                Vector3 innerStep = vertices[nextIndex] - vertices[baseIndex];
+                Vector3 outerStep = vertices[nextIndex + 1] - vertices[baseIndex + 1];
+
+                if (Vector3.Dot(innerStep, flow) < 0f || Vector3.Dot(outerStep, flow) < 0f)
+                    continue;
+
                 // Sağ kenarlık yolla aynı sarımı, sol kenarlık ters sarımı
                 // kullanmalı — yoksa yüzü aşağı bakıp görünmez olur.
                 if (sideSign > 0f)

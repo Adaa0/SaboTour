@@ -17,8 +17,16 @@ using Steamworks;
 /// </summary>
 public static class PlayerNameSettings
 {
-    /// <summary>İsim uzunluk sınırı. Kutu da, sunucu da bunu uyguluyor.</summary>
-    public const int MaxLength = 20;
+    /// <summary>
+    /// İsim uzunluk sınırı. Kutu da, sunucu da bunu uyguluyor.
+    ///
+    /// NEDEN 12 (20 DEĞİL): sıralama tablosu ve lobi listesi dar kutulara
+    /// sığmak zorunda. 20 karakterlik bir isim tabloda satırı taşırıyordu ve
+    /// kırpma (…) devreye giriyordu. Sınırı KAYNAKTA 12 yapmak, oyuncunun
+    /// yazdığı ismin her yerde AYNEN göründüğü anlamına geliyor — kırpılmış
+    /// bir isim görmek, kısa bir isim yazmaktan daha kötü.
+    /// </summary>
+    public const int MaxLength = 12;
 
     private const string PrefsKey = "SaboTour_PlayerName";
     private const string Fallback = "Oyuncu";

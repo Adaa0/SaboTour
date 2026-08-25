@@ -129,7 +129,16 @@ public class FpsDisplay : MonoBehaviour
         Canvas canvas = canvasObject.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 32000; // her şeyin üstünde kalsın
-        canvasObject.AddComponent<CanvasScaler>();
+
+        // 🚨 CanvasScaler'ı VARSAYILAN bırakmak = Constant Pixel Size:
+        // sayaç 2K/4K ekranda fiziksel olarak küçülüyor ve köşeden bıraktığı
+        // boşluk ekrana göre daralıyordu. 1920×1080 referansıyla ölçekleyince
+        // her çözünürlükte 1080p'deki gibi duruyor.
+        // (Aynı hata projedeki kodda kurulan bütün UI'larda vardı.)
+        CanvasScaler scaler = canvasObject.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
 
         GameObject labelObject = new GameObject("FpsLabel");
         labelObject.transform.SetParent(canvasObject.transform, false);

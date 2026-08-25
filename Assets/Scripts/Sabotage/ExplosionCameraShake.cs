@@ -80,11 +80,23 @@ public class ExplosionCameraShake : CinemachineExtension
     {
         if (radius <= 0f) return;
 
+        // Cinemachine OLMAYAN kameraları da sars — sabotajcının FPCam'i öyle.
+        // Eskiden bu satır yoktu ve sabotajcı kendi tetiklediği patlamayı bile
+        // hissetmiyordu (bkz. SimpleCameraShake).
+        int simpleShaken = SimpleCameraShake.ShakeAt(worldPosition, radius, strength);
+
         if (Active.Count == 0)
         {
-            Debug.LogWarning("[ExplosionCameraShake] Sarsılacak KAMERA YOK. Ya CarCam objesine bu " +
-                             "component eklenmemiş, ya da bu client'ta hiçbir CarCam aktif değil " +
-                             "(ör. sabotajcının ekranı — sabotajcı kamerası Cinemachine değil).");
+            // Sadece HİÇBİR sistem sarsmadıysa uyar. Sabotajcı ekranında
+            // Cinemachine kamera olmaması normal, orada SimpleCameraShake
+            // devreye giriyor — o durumda uyarı vermek gürültü olurdu.
+            if (simpleShaken == 0)
+            {
+                Debug.LogWarning("[ExplosionCameraShake] Sarsılacak KAMERA YOK — ne Cinemachine " +
+                                 "(CarCam) ne de düz kamera (SimpleCameraShake) menzilde. " +
+                                 "Menzil dışında kalmış olabilir.");
+            }
+
             return;
         }
 

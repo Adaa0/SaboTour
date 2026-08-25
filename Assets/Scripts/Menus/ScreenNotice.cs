@@ -1,4 +1,5 @@
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,22 +8,37 @@ using UnityEngine.UI;
 ///
 /// KULLANIMI (kod):  ScreenNotice.Show("Bağlantı koptu");
 ///
-/// NEDEN RUNTIME'DA OLUŞTURULUYOR (sahnede hazır bir panel değil):
-/// Bu mesajların çoğu SAHNE GEÇİŞİ SIRASINDA gösteriliyor — örneğin host
-/// oyundan çıkınca Mirror otomatik olarak Offline Scene'i yüklüyor ve
-/// Online Scene'deki her panel o anda yok oluyor. Runtime'da oluşturulup
-/// DontDestroyOnLoad işaretlenen bir Canvas ise geçişte hayatta kalıyor,
-/// yani oyuncu ana menüye düşerken mesajı okumaya devam edebiliyor.
+/// Oyundaki ortadaki bildirimlerin HEPSİ buradan geçiyor: 3-2-1 geri
+/// sayımı, "SON TUR!", "⚠ MOTOR ARIZASI", rol ipuçları, bağlantı uyarıları.
 ///
-/// Ayrıca bu sayede Inspector'da elle panel/Text kurmak gerekmiyor —
-/// SaboteurController'ın crosshair'i ile aynı desen.
+/// ─── GÖRÜNÜM ARTIK PREFABTA ───────────────────────────────────────────
+/// Yazının fontu / boyutu / rengi / arka planı
+/// `Assets/Resources/UI/ScreenNotice.prefab` içinde yaşıyor. Değiştirmek
+/// için prefaba çift tıkla; bozulursa üst menüden
+/// **SaboTour > UI Prefabları > Ekran Mesajı Prefabını Oluştur**.
+///
+/// Prefab bulunamazsa kod yine de basit bir yazı kuruyor (aşağıdaki
+/// `BuildFallback`). Bu bilinçli bir güvenlik ağı: bu mesajların bir kısmı
+/// "bağlantı koptu" gibi kritik bilgiler, prefab kaybolduğu için oyuncunun
+/// sessizce hiçbir şey görmemesi kabul edilemez.
+///
+/// ─── NEDEN SAHNEYE DEĞİL, DontDestroyOnLoad'A KURULUYOR ───────────────
+/// Bu mesajların çoğu SAHNE GEÇİŞİ SIRASINDA gösteriliyor — host oyundan
+/// çıkınca Mirror Offline Scene'i yüklüyor ve Online Scene'deki her panel o
+/// anda yok oluyor. DontDestroyOnLoad olan bir Canvas geçişte hayatta
+/// kalıyor, yani oyuncu ana menüye düşerken mesajı okumaya devam ediyor.
 /// </summary>
 public class ScreenNotice : MonoBehaviour
 {
     private static ScreenNotice instance;
 
-    private GameObject noticeRoot;
-    private Text noticeText;
+    [Header("Prefab Referansları")]
+    [Tooltip("Açılıp kapanan mesaj kabı (yazı + arka plan).")]
+    public GameObject noticeRoot;
+
+    [Tooltip("Mesajın yazıldığı metin kutusu.")]
+    public TMP_Text noticeText;
+
     private Coroutine hideRoutine;
 
     /// <summary>
@@ -34,7 +50,7 @@ public class ScreenNotice : MonoBehaviour
         if (string.IsNullOrEmpty(message)) return;
 
         EnsureInstance();
-        instance.ShowInternal(message, seconds);
+        if (instance != null) instance.ShowInternal(message, seconds);
     }
 
     /// <summary>Mesajı hemen gizler (ör. yeni bir oyuna girilince).</summary>
@@ -44,49 +60,89 @@ public class ScreenNotice : MonoBehaviour
             instance.noticeRoot.SetActive(false);
     }
 
+    void Awake()
+    {
+        // Prefabtan gelen kopya kendi kendini kaydediyor. İkinci bir kopya
+        // oluşursa (iki sahne birden yüklenirse) iki mesaj üst üste binerdi.
+        if (instance != null && instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        instance = this;
+        DontDestroyOnLoad(gameObject);
+
+        if (noticeRoot != null) noticeRoot.SetActive(false);
+    }
+
+    void OnDestroy()
+    {
+        if (instance == this) instance = null;
+    }
+
     private static void EnsureInstance()
     {
         if (instance != null) return;
 
-        GameObject go = new GameObject("ScreenNotice (otomatik)");
-        DontDestroyOnLoad(go);
+        GameObject prefab = Resources.Load<GameObject>("UI/ScreenNotice");
+        if (prefab != null)
+        {
+            // Awake içinde `instance` kendini atıyor, burada tekrar
+            // atamaya gerek yok.
+            Instantiate(prefab).name = "ScreenNotice (otomatik)";
+            if (instance != null) return;
+        }
+
+        Debug.LogWarning("[ScreenNotice] Assets/Resources/UI/ScreenNotice.prefab bulunamadı — " +
+                         "üst menüden 'SaboTour > UI Prefabları > Ekran Mesajı Prefabını Oluştur' " +
+                         "çalıştır. Şimdilik basit bir yedek yazı kullanılıyor.");
+
+        GameObject go = new GameObject("ScreenNotice (yedek)");
         instance = go.AddComponent<ScreenNotice>();
-        instance.Build();
+        instance.BuildFallback();
     }
 
-    private void Build()
+    /// <summary>
+    /// Prefab yokken kullanılan asgari kurulum. Güzel görünmesi hedef
+    /// değil — mesajın OKUNABİLİR olması hedef.
+    /// </summary>
+    private void BuildFallback()
     {
-        noticeRoot = new GameObject("NoticeCanvas");
-        noticeRoot.transform.SetParent(transform, false);
+        GameObject canvasObj = new GameObject("NoticeCanvas");
+        canvasObj.transform.SetParent(transform, false);
 
-        Canvas canvas = noticeRoot.AddComponent<Canvas>();
+        Canvas canvas = canvasObj.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvas.sortingOrder = 500; // crosshair (100) dahil her şeyin üstünde
-        noticeRoot.AddComponent<CanvasScaler>();
+        canvas.sortingOrder = 500;
 
-        // Yarı saydam koyu zemin — yazının pist/gökyüzü üzerinde okunaklı
-        // kalması için. Tam opak yapmadık, arkada ne olduğu görünsün.
-        GameObject bgObj = new GameObject("Background");
-        bgObj.transform.SetParent(noticeRoot.transform, false);
-        Image bg = bgObj.AddComponent<Image>();
-        bg.color = new Color(0f, 0f, 0f, 0.7f);
-        bg.raycastTarget = false;
-        RectTransform bgRect = bg.rectTransform;
-        bgRect.anchorMin = Vector2.zero;
-        bgRect.anchorMax = Vector2.one;
-        bgRect.offsetMin = Vector2.zero;
-        bgRect.offsetMax = Vector2.zero;
+        // 🚨 CanvasScaler'ı VARSAYILAN bırakmak (Constant Pixel Size) 2K
+        // ekranda yazıyı fiziksel olarak küçültüyordu — yedek yolda bile
+        // 1920×1080 referanslı ölçekleme kuruluyor.
+        CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
 
-        GameObject textObj = new GameObject("Message");
+        noticeRoot = new GameObject("NoticeRoot", typeof(RectTransform));
+        noticeRoot.transform.SetParent(canvasObj.transform, false);
+        RectTransform rootRect = noticeRoot.GetComponent<RectTransform>();
+        rootRect.anchorMin = Vector2.zero;
+        rootRect.anchorMax = Vector2.one;
+        rootRect.offsetMin = Vector2.zero;
+        rootRect.offsetMax = Vector2.zero;
+
+        GameObject textObj = new GameObject("Message", typeof(RectTransform));
         textObj.transform.SetParent(noticeRoot.transform, false);
-        noticeText = textObj.AddComponent<Text>();
-        noticeText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        noticeText.fontSize = 32;
-        noticeText.alignment = TextAnchor.MiddleCenter;
-        noticeText.color = Color.white;
-        noticeText.raycastTarget = false;
 
-        RectTransform textRect = noticeText.rectTransform;
+        TextMeshProUGUI text = textObj.AddComponent<TextMeshProUGUI>();
+        text.fontSize = 44f;
+        text.alignment = TextAlignmentOptions.Center;
+        text.color = Color.white;
+        text.raycastTarget = false;
+        noticeText = text;
+
+        RectTransform textRect = text.rectTransform;
         textRect.anchorMin = textRect.anchorMax = textRect.pivot = new Vector2(0.5f, 0.5f);
         textRect.anchoredPosition = Vector2.zero;
         textRect.sizeDelta = new Vector2(900f, 300f);
@@ -96,6 +152,8 @@ public class ScreenNotice : MonoBehaviour
 
     private void ShowInternal(string message, float seconds)
     {
+        if (noticeText == null || noticeRoot == null) return;
+
         noticeText.text = message;
         noticeRoot.SetActive(true);
 

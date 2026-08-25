@@ -925,6 +925,25 @@ public class CarController : NetworkBehaviour
             if (!keepSteeringDuringEngineFailure)
                 steerInput = 0f;
         }
+
+        // ══ GERİ SAYIM KİLİDİ ══
+        // Yarış "3, 2, 1, BAŞLA" ile başlıyor; geri sayım sürerken gaz
+        // çalışmıyor, yoksa herkes "3"te fırlardı.
+        //
+        // Girdi HİÇ OKUNMUYOR değil, okunup SONRA siliniyor — motor
+        // arızasındaki gerekçenin aynısı: `Input.GetAxis` kendi içinde
+        // yumuşatma yapıyor, okumayı atlarsak kilit kalkınca gaza basılı
+        // tutan oyuncunun girdisi sıfırdan rampalanır ve araç bir an daha
+        // tepkisiz kalırdı.
+        //
+        // SAHNEDE RacePodiumManager YOKSA (fotoğraf sahnesi, izole test)
+        // `StartLockActive` false kalıyor — hiçbir aracı kilitlemiyor.
+        if (RacePodiumManager.StartLockActive)
+        {
+            moveInput = 0f;
+            steerInput = 0f;
+            isHandbrakePressed = false;
+        }
     }
 
     #endregion

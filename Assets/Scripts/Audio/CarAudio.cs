@@ -204,7 +204,12 @@ public class CarAudio : MonoBehaviour
     void OnCollisionEnter(Collision collision)
     {
         if (crashClips == null || crashClips.Length == 0) return;
-        if (crashOnlyForOwnCar && !car.isOwned) return;
+        // `car.isOwned` DEĞİL: Mirror'da `isOwned => netIdentity.isOwned` ve
+        // araba prefabı network DIŞINDA da Instantiate ediliyor (minimap araba
+        // marker'ı, fotoğraf sahnesi). O kopyalarda NetworkIdentity yok, yani
+        // düz `isOwned` NullReferenceException atıyor. `IsNetworkOwned` bu
+        // kontrolü kendi içinde yapıyor.
+        if (crashOnlyForOwnCar && !car.IsNetworkOwned) return;
         if (Time.time - lastCrashTime < crashCooldown) return;
 
         float impactSpeed = collision.relativeVelocity.magnitude;

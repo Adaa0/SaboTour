@@ -32,8 +32,14 @@ public class SaboteurController : NetworkBehaviour
     [SerializeField] private bool blockMovementWhenUnlocked = true;
 
     [Header("Crosshair (nişangah)")]
-    [Tooltip("Ekranın ortasında artı şeklinde nişangah gösterilsin mi? Sadece bu karakterin sahibi olan client'ta oluşturulur.")]
+    [Tooltip("Ekranın ortasında nişangah gösterilsin mi? Sadece bu karakterin sahibi olan client'ta oluşturulur.")]
     [SerializeField] private bool showCrosshair = true;
+
+    [Tooltip("⚠️ AŞAĞIDAKİ ÜÇ AYAR ARTIK NORMALDE KULLANILMIYOR.\n\n" +
+             "Nişangahın görünümü Assets/Resources/UI/SaboteurHud.prefab " +
+             "içinde yaşıyor — boyutunu/rengini oradan değiştir.\n\n" +
+             "Bunlar sadece o prefab bulunamadığında kurulan YEDEK nişangah " +
+             "için geçerli.")]
     [SerializeField] private float crosshairSize = 18f;
     [SerializeField] private float crosshairThickness = 2f;
     [SerializeField] private Color crosshairColor = new Color(1f, 1f, 1f, 0.8f);
@@ -163,6 +169,13 @@ public class SaboteurController : NetworkBehaviour
         {
             fpCam.tag = "MainCamera";
             fpCam.SetActive(true);
+
+            // PATLAMA SARSINTISI: yarışçının kamerası Cinemachine olduğu için
+            // ExplosionCameraShake'ten pay alıyor, ama FPCam düz bir kamera —
+            // sabotajcı kendi tetiklediği patlamayı bile hissetmiyordu.
+            // Bileşeni burada ekliyoruz ki prefabda elle ayar gerekmesin.
+            if (fpCam.GetComponent<SimpleCameraShake>() == null)
+                fpCam.AddComponent<SimpleCameraShake>();
         }
         else
         {
@@ -175,6 +188,55 @@ public class SaboteurController : NetworkBehaviour
             CreateCrosshair();
     }
 
+    // Tanıtım ipucu OTURUMDA BİR KEZ gösteriliyor. Static olmak zorunda:
+    // sabotajcı objesi her yarışta yeniden doğuyor, instance alanı hatırlamaz.
+    private static bool roleHintShown;
+
+    [Header("Tanıtım")]
+    [Tooltip("Sabotajcı ilk kez doğduğunda ekranda kısa bir kullanım ipucu göster.")]
+    [SerializeField] private bool showRoleHint = true;
+
+    [Tooltip("İpucunun ekranda kalma süresi (saniye).")]
+    [SerializeField] private float roleHintSeconds = 11f;
+
+    // İpucu "BAŞLA!" yazısının hemen ardından çıksın diye küçük bir gecikme.
+    private float roleHintTimer = -1f;
+
+    /// <summary>
+    /// Sabotajcı rolü KURA ile atanıyor ve kendini birden bir kulede yürürken
+    /// bulan oyuncunun hiçbir referansı yok — yarışçı en azından "araba, gaz
+    /// ver" diye anlıyor. "Nasıl Oynanır" metni ana menüde var ama oyuncuların
+    /// bir kısmı okumadan giriyor.
+    ///
+    /// Tam panel AÇMIYORUZ (yarış başlamış oluyor), sadece üç adımlık kısa bir
+    /// hatırlatma. Oturumda bir kez: aynı kişiye her yarışta göstermek
+    /// yardımcı olmaktan çıkıp rahatsız edici olurdu.
+    ///
+    /// ⚠️ YARIŞ BAŞLADIKTAN SONRA gösteriliyor: geri sayım da `ScreenNotice`
+    /// kullanıyor, daha erken gösterseydik "3" üstüne yazardı.
+    /// Her karede `Update`'ten çağrılıyor.
+    /// </summary>
+    private void ShowRoleHint()
+    {
+        if (!showRoleHint || roleHintShown) return;
+        if (!RacePodiumManager.RaceStarted) return;
+
+        if (roleHintTimer < 0f) roleHintTimer = 1.4f;   // "BAŞLA!" okunsun
+
+        roleHintTimer -= Time.deltaTime;
+        if (roleHintTimer > 0f) return;
+
+        roleHintShown = true;
+
+        ScreenNotice.Show(
+            "SABOTAJCISIN\n" +
+            "1) Masadaki haritadan bir checkpoint'e tıkla\n" +
+            "2) Bir skil butonuna bas\n" +
+            "3) Büyük kırmızı butona basıp ateşle\n" +
+            "Yeşil marker hazır, kırmızı seçili/soğuyor. Detay için ESC.",
+            roleHintSeconds);
+    }
+
     // Yarış bitip podyum sahnesine geçilince true olur — kontrol tamamen
     // durur (RacePodiumManager tarafından FreezeForRaceEnd ile ayarlanır).
     private bool raceEndedFrozen = false;
@@ -182,6 +244,9 @@ public class SaboteurController : NetworkBehaviour
     void Update()
     {
         if (!isOwned) return;
+
+        // Rol ipucu — yarış başladıktan kısa süre sonra, oturumda bir kez.
+        ShowRoleHint();
 
         if (raceEndedFrozen)
         {
@@ -220,7 +285,12 @@ public class SaboteurController : NetworkBehaviour
     {
         if (!escUnlocksCursor) return;
 
-        bool shouldBeLocked = !PauseMenuController.IsOpen;
+        // YARIŞ BİTTİYSE İMLEÇ SERBEST — podyumda "Tekrar Oyna" butonuna
+        // tıklanabilmesi için. Sabotajcı zaten donduruluyor, kilidin orada
+        // bir işlevi kalmıyor.
+        bool raceOver = RacePodiumManager.Instance != null && RacePodiumManager.Instance.RaceOver;
+
+        bool shouldBeLocked = !PauseMenuController.IsOpen && !raceOver;
 
         if (shouldBeLocked != cursorLocked)
             SetCursorLocked(shouldBeLocked);
@@ -367,19 +437,50 @@ public class SaboteurController : NetworkBehaviour
     }
 
     /// <summary>
-    /// Ekran ortasına artı şeklinde bir nişangah oluşturur. Sadece bu
+    /// Sabotajcının ekran UI'ını (şimdilik sadece nişangah) kurar. Sadece bu
     /// karakterin SAHİBİ olan client'ta çağrılıyor (OnStartAuthority), yani
-    /// yarışçıların ekranında görünmüyor. Runtime'da oluşturuluyor —
-    /// sahnede elle Canvas kurmaya gerek yok.
+    /// yarışçıların ekranında görünmüyor.
+    ///
+    /// ─── GÖRÜNÜM ARTIK PREFABTA ───────────────────────────────────────
+    /// `Assets/Resources/UI/SaboteurHud.prefab`. Nişangahın boyutu/rengi/
+    /// şekli oradan düzenleniyor; bozulursa üst menüden
+    /// **SaboTour > UI Prefabları > Sabotajcı HUD Prefabını Oluştur**.
+    ///
+    /// Prefab bulunamazsa aşağıdaki yedek yol devreye giriyor. Bu bilinçli:
+    /// sabotajcının nişangahı olmadan hiçbir şeye tıklayamaz, yani eksik bir
+    /// prefab oyunu oynanamaz hale getirirdi.
     /// </summary>
     private void CreateCrosshair()
     {
-        crosshairRoot = new GameObject("SaboteurCrosshair");
+        GameObject prefab = Resources.Load<GameObject>("UI/SaboteurHud");
+        if (prefab != null)
+        {
+            crosshairRoot = Instantiate(prefab);
+            crosshairRoot.name = "SaboteurHud (otomatik)";
+            return;
+        }
+
+        Debug.LogWarning("[SaboteurController] Assets/Resources/UI/SaboteurHud.prefab bulunamadı — " +
+                         "üst menüden 'SaboTour > UI Prefabları > Sabotajcı HUD Prefabını Oluştur' " +
+                         "çalıştır. Şimdilik yedek nişangah kullanılıyor.");
+
+        BuildFallbackCrosshair();
+    }
+
+    private void BuildFallbackCrosshair()
+    {
+        crosshairRoot = new GameObject("SaboteurCrosshair (yedek)");
 
         Canvas canvas = crosshairRoot.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 100; // diğer UI'ların üstünde kalsın
-        crosshairRoot.AddComponent<CanvasScaler>();
+
+        // 🚨 CanvasScaler'ı varsayılan bırakmak (Constant Pixel Size) 2K
+        // ekranda nişangahı fiziksel olarak küçültüyordu.
+        CanvasScaler scaler = crosshairRoot.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
 
         CreateCrosshairBar(crosshairRoot.transform, new Vector2(crosshairSize, crosshairThickness)); // yatay
         CreateCrosshairBar(crosshairRoot.transform, new Vector2(crosshairThickness, crosshairSize)); // dikey
