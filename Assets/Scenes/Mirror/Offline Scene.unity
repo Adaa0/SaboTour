@@ -161,8 +161,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "\u0130smini yaz..."
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -1195,8 +1195,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "Oyuncular y\xFCkleniyor..."
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -1589,8 +1589,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Geri Bildirim
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -1812,8 +1812,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "Nas\u0131l Oynan\u0131r"
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -2066,8 +2066,8 @@ MonoBehaviour:
   m_text: "Bu bir playtest \u2014 fikirlerini yazman oyunun geli\u015Fmesinin tek
     yolu."
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -2091,8 +2091,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 20
-  m_fontSizeBase: 20
+  m_fontSize: 30
+  m_fontSizeBase: 30
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -2281,8 +2281,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "\u200B"
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -2489,8 +2489,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "Haz\u0131r\u0131m"
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -2840,8 +2840,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Davet Et
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -2992,8 +2992,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: Oyun Kur
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -3144,8 +3144,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "H\u0131zl\u0131 Kat\u0131l"
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -3544,8 +3544,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: "Y\xFCkleniyor..."
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
+  m_sharedMaterial: {fileID: 5387524493711292489, guid: 5c9e0e4530bf7cf49a59a5329dd75d19, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
