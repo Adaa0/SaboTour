@@ -94,7 +94,7 @@ public class FeedbackMenuController : MonoBehaviour
 
     private void Back()
     {
-        if (pauseMenu != null) pauseMenu.ShowMainPanel();
+        if (pauseMenu != null) pauseMenu.SweepToMainPanel();
         else Hide();
     }
 

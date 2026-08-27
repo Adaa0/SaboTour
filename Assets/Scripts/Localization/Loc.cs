@@ -31,6 +31,7 @@ public static class Loc
     private static readonly Dictionary<string, string[]> Table = new Dictionary<string, string[]>
     {
         // ─────────────── ANA MENÜ / LOBİ ───────────────
+        ["menu.play"]           = new[] { "OYNA", "PLAY" },
         ["menu.host"]           = new[] { "Oyun Kur", "Host Game" },
         ["menu.quickjoin"]      = new[] { "Hızlı Katıl", "Quick Join" },
         ["menu.invite"]         = new[] { "Davet Et", "Invite Friend" },

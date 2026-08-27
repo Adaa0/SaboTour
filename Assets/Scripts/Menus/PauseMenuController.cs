@@ -80,6 +80,10 @@ public class PauseMenuController : MonoBehaviour
     [Tooltip("Nasıl Oynanır panelinin içindeki 'Geri' butonu.")]
     public Button howToPlayGeriButton;
 
+    [Header("Geçiş Animasyonu")]
+    [Tooltip("Paneller arası geçişte ekranı süpüren Persona animasyonu. Kapatırsan geçişler anlık olur.")]
+    public bool useSweepTransitions = true;
+
     // Ana butonlar yerine bir ALT PANEL (ayarlar / geri bildirim / nasıl
     // oynanır) açık mı. ESC'nin davranışını belirliyor: alt paneldeyken ESC
     // menüyü kapatmak yerine önce ana panele "geri" dönüyor.
@@ -144,7 +148,7 @@ public class PauseMenuController : MonoBehaviour
         IsOpen = false;
 
         devamEtButton.onClick.AddListener(Close);
-        ayarlarButton.onClick.AddListener(ShowSettings);
+        ayarlarButton.onClick.AddListener(SweepToSettings);
         oyundanAyrilButton.onClick.AddListener(LeaveGame);
         oyunuKapatButton.onClick.AddListener(QuitApplication);
 
@@ -152,11 +156,11 @@ public class PauseMenuController : MonoBehaviour
         // Hepsi null-güvenli: prefab henüz güncellenmemişse bu butonlar yok
         // demektir ve menünün geri kalanı hiçbir şey olmamış gibi çalışır.
         // Butonu olmayan bir paneli oyuncu zaten açamaz.
-        if (feedbackButton != null) feedbackButton.onClick.AddListener(ShowFeedback);
+        if (feedbackButton != null) feedbackButton.onClick.AddListener(SweepToFeedback);
         else if (feedbackMenu != null) feedbackMenu.gameObject.SetActive(false);
 
-        if (nasilOynanirButton != null) nasilOynanirButton.onClick.AddListener(ShowHowToPlay);
-        if (howToPlayGeriButton != null) howToPlayGeriButton.onClick.AddListener(ShowMainPanel);
+        if (nasilOynanirButton != null) nasilOynanirButton.onClick.AddListener(SweepToHowToPlay);
+        if (howToPlayGeriButton != null) howToPlayGeriButton.onClick.AddListener(SweepToMainPanel);
 
         // Prefabda SettingsPanel'in tiki AÇIK kalmış olsa bile tutarlı bir
         // başlangıç durumu garanti ediyoruz: ana butonlar görünür, ayarlar
@@ -262,18 +266,59 @@ public class PauseMenuController : MonoBehaviour
     {
         if (howToPlayPanel == null) return;
 
-        Open();
-        ShowHowToPlay();
-        openedForSubPanelOnly = true;
+        Transition(() =>
+        {
+            Open();
+            ShowHowToPlay();
+            openedForSubPanelOnly = true;
+        });
     }
 
     public void OpenFeedbackFromMainMenu()
     {
         if (feedbackMenu == null) return;
 
-        Open();
-        ShowFeedback();
-        openedForSubPanelOnly = true;
+        Transition(() =>
+        {
+            Open();
+            ShowFeedback();
+            openedForSubPanelOnly = true;
+        });
+    }
+
+    /// <summary>Ana menüdeki "Ayarlar" butonu bunu çağırıyor.</summary>
+    public void OpenSettingsFromMainMenu()
+    {
+        if (settingsMenu == null) return;
+
+        Transition(() =>
+        {
+            Open();
+            ShowSettings();
+            openedForSubPanelOnly = true;
+        });
+    }
+
+    // ─── Süpürmeli Geçişler ──────────────────────────────────────────────
+    // Videodaki sayfa geçişi: eğik bir kırmızı bar ekranı süpürüyor, arkasından
+    // siyah bir tanesi kovalıyor, ekran KAPALIYKEN panel değişiyor.
+    //
+    // 🚨 `ShowMainPanel` DOĞRUDAN SÜPÜRMEYE BAĞLANMADI, ayrı bir `SweepTo...`
+    // yazıldı. Sebep: `Close()` ve `Awake()` de `ShowMainPanel`i çağırıyor —
+    // oraya süpürme koysaydık ESC ile menüyü kapatmak ve oyun açılışı bile
+    // ekranı süpürürdü.
+
+    public void SweepToMainPanel() => Transition(ShowMainPanel);
+    private void SweepToSettings() => Transition(ShowSettings);
+    private void SweepToFeedback() => Transition(ShowFeedback);
+    private void SweepToHowToPlay() => Transition(ShowHowToPlay);
+
+    private void Transition(System.Action change)
+    {
+        if (change == null) return;
+
+        if (useSweepTransitions) PersonaPageSweep.Sweep(change);
+        else change();
     }
 
     private void ShowSettings()

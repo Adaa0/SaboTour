@@ -107,7 +107,7 @@ public class SettingsMenuController : MonoBehaviour
         // yüzden referansı GetComponentInParent ile buluyoruz).
         PauseMenuController pauseMenu = GetComponentInParent<PauseMenuController>(true);
         if (pauseMenu != null)
-            geriButton.onClick.AddListener(pauseMenu.ShowMainPanel);
+            geriButton.onClick.AddListener(pauseMenu.SweepToMainPanel);
 
         // Menü hiç açılmasa bile önceki oturumdan kalan ayarlar devreye girsin.
         ApplyPersistedOnStartup();
