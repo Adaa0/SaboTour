@@ -448,7 +448,7 @@ public class SteamLobbyManager : MonoBehaviour
         quickJoinCandidates.Clear();
         quickJoinIndex = 0;
 
-        ScreenNotice.Show("Oyun aranıyor...", 4f);
+        ScreenNotice.Show(Loc.T("net.searching"), 4f);
 
         // FİLTRELER — istekten ÖNCE eklenmeli, sonra RequestLobbyList'e
         // otomatik uygulanıyorlar (Steam API'sinin çalışma şekli bu).
@@ -515,7 +515,7 @@ public class SteamLobbyManager : MonoBehaviour
         quickJoinCandidates.Clear();
         quickJoinIndex = 0;
 
-        ScreenNotice.Show("Açık oyun bulunamadı — senin oyunun kuruldu, başkaları katılabilir.", 6f);
+        ScreenNotice.Show(Loc.T("net.nogamefound"), 6f);
         Debug.Log("[SteamLobbyManager] Uygun oyun yok — public lobi kuruluyor.");
 
         CreateLobby(quickJoinLobbyType);
@@ -579,7 +579,7 @@ public class SteamLobbyManager : MonoBehaviour
                              $"{(EChatRoomEnterResponse)callback.m_EChatRoomEnterResponse}");
 
             if (quickJoining) TryNextQuickJoinCandidate();
-            else ScreenNotice.Show("Oyuna katılınamadı — oyun dolmuş ya da başlamış olabilir.", 5f);
+            else ScreenNotice.Show(Loc.T("net.joinfailed"), 5f);
 
             return;
         }
@@ -648,7 +648,7 @@ public class SteamLobbyManager : MonoBehaviour
         {
             Debug.LogError("[SteamLobbyManager] Önceki oturum 8 saniyede kapanmadı — davete katılınamadı. " +
                            "Oyunu yeniden başlatman gerekebilir.");
-            ScreenNotice.Show("Önceki oyundan çıkılamadı, davete katılınamadı.", 5f);
+            ScreenNotice.Show(Loc.T("net.leavefailed"), 5f);
             yield break;
         }
 

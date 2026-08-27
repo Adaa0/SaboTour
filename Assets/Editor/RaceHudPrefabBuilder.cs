@@ -267,6 +267,150 @@ public static class RaceHudPrefabBuilder
     }
 
     /// <summary>
+    /// ROL İPUCU PANELİNİ mevcut prefaba EKLER (prefabı yeniden kurmaz).
+    /// Zaten varsa hiçbir şey yapmaz — araç birden çok kez çalıştırılabilir.
+    /// </summary>
+    [MenuItem("SaboTour/Yarış HUD Prefabını Güncelle (rol ipucu)")]
+    public static void EnsureRoleHintMenu()
+    {
+        if (EnsureRoleHint())
+            Debug.Log("[RaceHud] Rol ipucu paneli eklendi (sağ üst, minimabın altı).");
+        else
+            Debug.Log("[RaceHud] Rol ipucu paneli zaten vardı, değişiklik yapılmadı.");
+    }
+
+    public static bool EnsureRoleHint()
+    {
+        if (!File.Exists(PrefabPath))
+        {
+            Debug.LogWarning($"[RaceHud] {PrefabPath} yok — önce " +
+                             "'SaboTour > Yarış HUD Prefabını Oluştur' çalıştır.");
+            return false;
+        }
+
+        GameObject contents = PrefabUtility.LoadPrefabContents(PrefabPath);
+
+        try
+        {
+            RaceHud hud = contents.GetComponent<RaceHud>();
+            if (hud == null)
+            {
+                Debug.LogWarning("[RaceHud] Prefabın kökünde RaceHud bileşeni yok, atlandı.");
+                return false;
+            }
+
+            // Zaten kurulu mu? (Obje duruyor ama referans kopmuşsa yeniden bağla.)
+            foreach (Transform child in contents.GetComponentsInChildren<Transform>(true))
+            {
+                if (child.gameObject.name != "RoleHintRoot") continue;
+
+                if (hud.roleHintRoot == null)
+                {
+                    hud.roleHintRoot = child.gameObject;
+                    hud.roleHintText = child.GetComponentInChildren<TMP_Text>(true);
+                    PrefabUtility.SaveAsPrefabAsset(contents, PrefabPath);
+                    AssetDatabase.SaveAssets();
+                    Debug.Log("[RaceHud] Rol ipucu referansı yeniden bağlandı.");
+                    return true;
+                }
+                return false;
+            }
+
+            BuildRoleHint(contents.transform, hud, FindFont());
+
+            PrefabUtility.SaveAsPrefabAsset(contents, PrefabPath);
+            AssetDatabase.SaveAssets();
+            return true;
+        }
+        finally
+        {
+            PrefabUtility.UnloadPrefabContents(contents);
+        }
+    }
+
+    /// <summary>
+    /// ROL İPUCU — sağ üst köşe, YARIŞÇI MİNİMABININ HEMEN ALTINDA.
+    ///
+    /// ─── NEDEN BURAYA TAŞINDI ─────────────────────────────────────────
+    /// İpucu eskiden `ScreenNotice` ile ekranın TAM ORTASINDA çıkıyor ve
+    /// 8-11 saniye pistin üstünü kapatıyordu — yarışın ilk saniyeleri tam da
+    /// oyuncunun ekrana en çok ihtiyaç duyduğu an.
+    ///
+    /// ─── KONUM HESABI ─────────────────────────────────────────────────
+    /// `RacerMinimap.prefab` → MinimapRoot: anchor (1,1), merkez (-142,-142),
+    /// 240×240. Yani sağ kenarı -22, ALT kenarı -262. Panel pivot'u sağ ÜST
+    /// köşesinde ve (-22, -274)'e konuyor: sağ kenarlar tam hizalı, minimabın
+    /// 12 px altında başlıyor.
+    ///
+    /// Sabotajcıda ekranda minimap yok — orada panel köşede tek başına
+    /// duruyor. İki rolde de AYNI yerde olması bilinçli: oyuncu rol
+    /// değiştirdiğinde "bilgi şurada" alışkanlığını yeniden öğrenmiyor.
+    /// </summary>
+    private static void BuildRoleHint(Transform parent, RaceHud hud, TMP_FontAsset font)
+    {
+        GameObject root = CreateRect("RoleHintRoot", parent);
+        RectTransform rect = root.GetComponent<RectTransform>();
+
+        rect.anchorMin = new Vector2(1f, 1f);
+        rect.anchorMax = new Vector2(1f, 1f);
+        rect.pivot = new Vector2(1f, 1f);
+        // GENİŞLİK = MİNİMAP GENİŞLİĞİ (240). Panel önce 380 px'di ve
+        // minimabın soluna doğru taşıyordu — köşede iki farklı genişlikte
+        // kutu üst üste durunca dağınık görünüyordu. Artık ikisi tam olarak
+        // aynı dikey şeridi paylaşıyor.
+        //
+        // 🚨 DAR KUTU BEDAVA DEĞİL: 240'a inince metinler sığmadı, bu yüzden
+        // font 17 → 14 düşürüldü ve ipuçları daha kısa satırlara bölündü
+        // (Loc.cs "hint.racer"/"hint.saboteur"). Boyut tahminle değil
+        // TMP.GetPreferredValues ile dört metnin de (2 ipucu × 2 dil)
+        // ölçülmesiyle seçildi.
+        // Yükseklik de ölçüldü: en uzun metin (yarışçı ipucu) 128 px, artı
+        // 20 px iç boşluk = 148. 170 seçildi → ~22 px pay, altta gereksiz
+        // boşluk bırakmadan farklı font fallback'lerine yer kalıyor.
+        rect.sizeDelta = new Vector2(240f, 170f);
+        rect.anchoredPosition = new Vector2(-22f, -274f);
+
+        // Yarı saydam koyu zemin: ipucu açık renkli bir pistin ya da gökyüzünün
+        // üstüne denk geldiğinde okunamıyordu.
+        Image bg = root.AddComponent<Image>();
+        bg.color = new Color(0f, 0f, 0f, 0.62f);
+        bg.raycastTarget = false;
+
+        GameObject textObj = CreateRect("RoleHintText", root.transform);
+        RectTransform textRect = textObj.GetComponent<RectTransform>();
+
+        // İç boşluk: kutu daraldığı için yatayda 10 px'e indirildi —
+        // 240'lık bir kutuda 12+12 px kenar boşluğu metne kalan yeri
+        // gereksiz kısıtlıyordu.
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.pivot = new Vector2(0.5f, 0.5f);
+        textRect.offsetMin = new Vector2(10f, 10f);
+        textRect.offsetMax = new Vector2(-10f, -10f);
+
+        TextMeshProUGUI text = textObj.AddComponent<TextMeshProUGUI>();
+        text.text = "";
+        text.fontSize = 14f;
+        text.alignment = TextAlignmentOptions.TopLeft;
+        text.color = Color.white;
+        text.raycastTarget = false;
+
+        // Satır kaydırma AÇIK: sıralama tablosunun tersine burası tam
+        // cümleler taşıyor. Çeviri Türkçe'den uzunsa alt satıra insin,
+        // kutunun dışına taşmasın.
+        text.textWrappingMode = TextWrappingModes.Normal;
+        text.overflowMode = TextOverflowModes.Overflow;
+
+        if (font != null) text.font = font;
+
+        hud.roleHintRoot = root;
+        hud.roleHintText = text;
+
+        // Panel KAPALI başlıyor — ipucu gelene kadar boş bir kutu görünmesin.
+        root.SetActive(false);
+    }
+
+    /// <summary>
     /// SIRALAMA TABLOSU — sol üst köşe.
     ///
     /// ─── NEDEN ARTIK SAHNEDE DEĞİL, BURADA ────────────────────────────

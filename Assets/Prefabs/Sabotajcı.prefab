@@ -253,14 +253,9 @@ MonoBehaviour:
   crosshairSize: 18
   crosshairThickness: 2
   crosshairColor: {r: 1, g: 1, b: 1, a: 0.8}
-  mouseSensitivity: 2
   minPitch: -80
   maxPitch: 80
   lookSmoothing: 25
-  allowSensitivityAdjustment: 1
-  sensitivityStep: 0.2
-  minSensitivity: 0.2
-  maxSensitivity: 8
   footstepClips: []
   stepDistance: 2.2
   footstepVolume: 0.4
@@ -269,6 +264,8 @@ MonoBehaviour:
   jumpLandVolume: 0.6
   fpCam: {fileID: 6819517073102545911}
   cameraPitchTransform: {fileID: 4382188129125509073}
+  showRoleHint: 1
+  roleHintSeconds: 20
 --- !u!114 &7312867911308870832
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -291,6 +288,7 @@ MonoBehaviour:
   triggerClip: {fileID: 8300000, guid: b1bc2d5b4b6129c45bd945475ea8d6b0, type: 3}
   deniedClip: {fileID: 0}
   interactionVolume: 0.85
+  allowArmingDuringCooldown: 0
   showDebugLogs: 1
 --- !u!1 &6819517073102545911
 GameObject:

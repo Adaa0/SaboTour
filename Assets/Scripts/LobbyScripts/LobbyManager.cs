@@ -214,7 +214,7 @@ public class LobbyManager : MonoBehaviour
         SfxPlayer.PlayUI(clip, lobbyVolume);
 
         if (ReadyButtonLabel != null)
-            ReadyButtonLabel.text = localReady ? "Hazır Değilim" : "Hazırım";
+            ReadyButtonLabel.text = Loc.T(localReady ? "menu.notready" : "menu.ready");
     }
 
     // ─── Oyuncu Listesi UI (Her Client'ta) ──────────────────────
@@ -234,7 +234,7 @@ public class LobbyManager : MonoBehaviour
 
         var sb = new StringBuilder();
         foreach (var p in players)
-            sb.AppendLine($"{p.PlayerLabel} — {(p.IsReady ? "Hazır" : "Bekleniyor")}");
+            sb.AppendLine($"{p.PlayerLabel} — {Loc.T(p.IsReady ? "menu.playerready" : "menu.playerwaiting")}");
 
         PlayerListText.text = sb.ToString();
     }
@@ -425,7 +425,7 @@ public class LobbyManager : MonoBehaviour
         localReady = false;
         lastKnownPlayerCount = -1; // katılma sesi yeni oturumda baştan saysın
 
-        if (ReadyButtonLabel != null) ReadyButtonLabel.text = "Hazırım";
+        if (ReadyButtonLabel != null) ReadyButtonLabel.text = Loc.T("menu.ready");
         if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(false);
         if (LobbyPanel != null) LobbyPanel.SetActive(true);
 

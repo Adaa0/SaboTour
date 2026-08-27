@@ -17,6 +17,15 @@ public class IceBomb : MonoBehaviour
     public float explosionRadius = 3f;
     public float explosionForce = 25000f;
 
+    [Tooltip("İtme yönüne eklenen yukarı bileşen. 0 = tamamen yatay (araba " +
+             "hedefe doğru yana kayıyor, yerdeki ağaçlara/kayalara giriyor), " +
+             "1 = dikey yukarıya eşit ağırlıkta. Unity'nin kendi " +
+             "Rigidbody.AddExplosionForce'undaki 'upwardsModifier' ile aynı " +
+             "fikir — patlama merkezinden arabaya çizilen düz çizgi neredeyse " +
+             "yatay olduğu için (ikisi de yer seviyesinde), bu bileşen " +
+             "olmadan araç havaya değil yana fırlıyordu.")]
+    [Range(0f, 1f)] public float upwardBias = 0.35f;
+
     [Header("Fırlayan Araç — Prop Çarpışması")]
     [Tooltip("Patlamayla fırlayan araç, bu süre boyunca ağaç/kaya collider'larını " +
              "yok sayar — havada ilk ağaca takılıp durmasın diye. Bu süre dolduktan " +
@@ -185,7 +194,17 @@ public class IceBomb : MonoBehaviour
                 float dist = Vector3.Distance(transform.position, hit.transform.position);
                 float t = Mathf.Clamp01(1f - (dist / explosionRadius));
                 float finalForce = explosionForce * t;
+
+                // Ham yön neredeyse tamamen YATAY: patlama merkezi de araba
+                // da yer seviyesinde, aradaki çizgi zemine paralel. Yukarı
+                // bileşen katılmazsa araç havaya değil yana savruluyor ve
+                // önündeki ilk ağacın/kayanın içine giriyor. `upwardBias`
+                // kadar Vector3.up karıştırıp yeniden normalize ediyoruz —
+                // yön hâlâ patlama merkezinden dışa doğru ama artık bir
+                // yay çizip havadan geçiyor.
                 Vector3 dir = (hit.transform.position - transform.position).normalized;
+                dir = (dir + Vector3.up * upwardBias).normalized;
+
                 rb.AddForce(dir * finalForce, ForceMode.Impulse);
 
                 // Fırlayan araç, piste yakın propların (ağaç/kaya) collider'larını

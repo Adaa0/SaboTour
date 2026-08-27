@@ -113,7 +113,10 @@ MonoBehaviour:
   flashMat: {fileID: 2100000, guid: d63a420a5ed8e2e48bc798fd20ecdd2d, type: 2}
   flashSpeed: 0.15
   explosionRadius: 300
-  explosionForce: 50000
+  explosionForce: 45000
+  upwardBias: 0.5
+  propIgnoreMinSeconds: 1.5
+  propIgnoreMaxSeconds: 8
   icePatchLifetime: 12
   launchClip: {fileID: 0}
   impactClip: {fileID: 0}

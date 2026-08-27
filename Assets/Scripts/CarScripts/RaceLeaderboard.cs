@@ -127,7 +127,7 @@ public class RaceLeaderboard : MonoBehaviour
         var sb = new StringBuilder();
 
         if (showHeader)
-            sb.AppendLine("<size=80%><color=#9AA3AE>SIRALAMA</color></size>");
+            sb.AppendLine($"<size=80%><color=#9AA3AE>{Loc.T("lb.title")}</color></size>");
 
         for (int i = 0; i < ordered.Count; i++)
             sb.AppendLine(BuildRow(ordered[i], i + 1));
@@ -152,20 +152,20 @@ public class RaceLeaderboard : MonoBehaviour
 
         if (p.HasFinished)
         {
-            status = "BİTİRDİ";
+            status = Loc.T("lb.finished");
             statusColor = ColorUtility.ToHtmlStringRGB(finishedColor);
         }
         else if (p.isRacing)
         {
             // CurrentLap 0'dan başlıyor (ilk turdayken 0). Ham hâliyle
             // yazılırsa yarışın başında "Tur 0/3" görünüyordu.
-            status = $"Tur {Mathf.Clamp(p.CurrentLap + 1, 1, p.maxLaps)}/{p.maxLaps}";
+            status = Loc.T("race.lap", Mathf.Clamp(p.CurrentLap + 1, 1, p.maxLaps), p.maxLaps);
             statusColor = "FFFFFF";
         }
         else
         {
             // Sabotajcı süreyle kazandı, bu yarışçı bitiremeden durduruldu.
-            status = "SÜRE DOLDU";
+            status = Loc.T("lb.timeup");
             statusColor = ColorUtility.ToHtmlStringRGB(timeoutColor);
         }
 
@@ -182,7 +182,7 @@ public class RaceLeaderboard : MonoBehaviour
     /// </summary>
     private string Shorten(string name)
     {
-        if (string.IsNullOrEmpty(name)) return "Oyuncu";
+        if (string.IsNullOrEmpty(name)) return Loc.T("lb.player");
         if (maxNameLength <= 0 || name.Length <= maxNameLength) return name;
 
         return name.Substring(0, maxNameLength) + "…";

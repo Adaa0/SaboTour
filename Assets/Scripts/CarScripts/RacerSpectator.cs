@@ -468,7 +468,7 @@ public class RacerSpectator : MonoBehaviour
     {
         if (Time.time - lastBoundaryNoticeTime < 10f) return;
         lastBoundaryNoticeTime = Time.time;
-        ScreenNotice.Show("İzleyici alanının sınırındasın.", 2f);
+        ScreenNotice.Show(Loc.T("warn.spectatorbound"), 2f);
     }
 
     private static float NormalizePitch(float eulerX) => eulerX > 180f ? eulerX - 360f : eulerX;

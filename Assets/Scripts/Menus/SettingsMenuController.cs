@@ -38,6 +38,11 @@ public class SettingsMenuController : MonoBehaviour
     public Slider volumeSlider;
     [Tooltip("Sabotajcının fare hassasiyeti. Henüz prefab'a eklenmediyse boş bırakılabilir — null-güvenli, hata vermez.")]
     public Slider sensitivitySlider;
+    [Tooltip("Oyun dili (Türkçe / English). Henüz prefab'a eklenmediyse boş " +
+             "bırakılabilir — null-güvenli. Boş olsa bile oyun ilk açılışta " +
+             "sistem dilini kendi seçiyor (bkz. GameLanguage), yani dil desteği " +
+             "bu dropdown olmadan da çalışır; dropdown sadece DEĞİŞTİRME yolu.")]
+    public Dropdown languageDropdown;
     public Button geriButton;
 
     private List<Resolution> resolutions;
@@ -84,6 +89,17 @@ public class SettingsMenuController : MonoBehaviour
             sensitivitySlider.minValue = MouseSensitivitySettings.MinDisplay;
             sensitivitySlider.maxValue = MouseSensitivitySettings.MaxDisplay;
             sensitivitySlider.onValueChanged.AddListener(OnSensitivityChanged);
+        }
+
+        // DİL — aynı null-güvenli desen. Seçenek isimleri GameLanguage'dan
+        // geliyor ve BİLEREK çevrilmiyor: her dil kendi adıyla yazılı
+        // ("Türkçe" / "English"). Yanlış dile düşen oyuncu, menüyü
+        // okuyamasa bile kendi dilinin adını listede tanıyabiliyor.
+        if (languageDropdown != null)
+        {
+            languageDropdown.ClearOptions();
+            languageDropdown.AddOptions(new List<string>(GameLanguage.DisplayNames));
+            languageDropdown.onValueChanged.AddListener(OnLanguageChanged);
         }
 
         // "Geri" butonu PauseMenuController'ın genel "ana panele dön" mantığını
@@ -185,6 +201,9 @@ public class SettingsMenuController : MonoBehaviour
 
         if (sensitivitySlider != null)
             sensitivitySlider.SetValueWithoutNotify(MouseSensitivitySettings.Display);
+
+        if (languageDropdown != null)
+            languageDropdown.SetValueWithoutNotify((int)GameLanguage.Current);
     }
 
     // ─── Değişiklik Olayları ───────────────────────────────────────────────
@@ -230,6 +249,18 @@ public class SettingsMenuController : MonoBehaviour
     private void OnSensitivityChanged(float displayValue)
     {
         MouseSensitivitySettings.SetFromDisplay(displayValue);
+    }
+
+    /// <summary>
+    /// Dil değişti. Tek yapması gereken GameLanguage'a yazmak — ekrandaki
+    /// yazıların yenilenmesi oradaki OnLanguageChanged olayıyla kendiliğinden
+    /// oluyor (LocalizedText bileşenleri o olaya abone). Yani burada tek tek
+    /// "şu yazıyı da güncelle" demek GEREKMİYOR; yeni bir metin eklendiğinde
+    /// bu metodun değişmesi de gerekmiyor.
+    /// </summary>
+    private void OnLanguageChanged(int index)
+    {
+        GameLanguage.Current = (Language)index;
     }
 
     private List<string> BuildResolutionLabels()

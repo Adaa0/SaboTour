@@ -1101,6 +1101,35 @@ public class TrackGenerator : MonoBehaviour
         texture.Apply();
 
         Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+
+        // 🚨 BUILD GÜVENLİĞİ — BU PROJEDE BİR KEZ GERÇEKTEN YAŞANDI.
+        // `Shader.Find` yalnızca build'e DAHİL EDİLMİŞ shader'ları bulabiliyor.
+        // Editor'de tüm shader'lar yüklü olduğu için burası hep çalışıyor, ama
+        // gerçek build'de shader stripping devreye giriyor: hiçbir materyalin
+        // referans vermediği bir shader build'e HİÇ girmiyor ve `Shader.Find`
+        // null dönüyor. `new Material(null)` ise ArgumentNullException fırlatıp
+        // pist üretimini YARIDA KESİYOR — minimap'te tam olarak bu olmuştu
+        // (kenarlık VE checkpoint'ler birden görünmez olmuştu).
+        //
+        // Son çare olarak YOLUN KENDİ materyalinin shader'ını kullanıyoruz:
+        // o materyal sahnede elle atanmış olduğu için Unity onu build'e
+        // GARANTİ dahil ediyor. Görüntü ideal olmayabilir ama kenarlık
+        // hiç görünmemektense kesinlikle daha iyi.
+        if (shader == null)
+        {
+            var roadRenderer = GetComponent<MeshRenderer>();
+            if (roadRenderer != null && roadRenderer.sharedMaterial != null)
+                shader = roadRenderer.sharedMaterial.shader;
+        }
+
+        if (shader == null)
+        {
+            Debug.LogError("[TrackGenerator] Kenarlık için hiçbir shader bulunamadı — " +
+                           "kenarlık çizilmeyecek. Çözüm: TrackGenerator > Curb Material " +
+                           "alanına Inspector'dan bir materyal ata (o zaman bu kod hiç çalışmaz).");
+            return null;
+        }
+
         var material = new Material(shader) { name = "Curb Material (auto)" };
         material.mainTexture = texture;
         material.enableInstancing = true;

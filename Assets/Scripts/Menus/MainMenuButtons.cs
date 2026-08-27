@@ -38,12 +38,16 @@ public class MainMenuButtons : MonoBehaviour
     [Tooltip("Butonların yanında duran hatırlatma yazısı. Boş bırakılabilir.")]
     public TMP_Text reminderText;
 
-    [Tooltip("Oyuncu HENÜZ oynamamışken gösterilen metin.")]
+    [Tooltip("AÇIK (önerilen): hatırlatma yazıları Loc.cs sözlüğünden, oyuncunun " +
+             "kendi dilinde gelir. KAPALI: aşağıdaki iki alan aynen kullanılır.")]
+    public bool useLocalizedReminders = true;
+
+    [Tooltip("Oyuncu HENÜZ oynamamışken gösterilen metin. Sadece 'Use Localized Reminders' KAPALIYKEN kullanılır.")]
     [TextArea]
     public string reminderBeforePlaying =
         "Bu bir playtest — fikirlerini yazman oyunun gelişmesinin tek yolu.";
 
-    [Tooltip("Oyuncu en az bir yarışa girdikten SONRA gösterilen metin.")]
+    [Tooltip("Oyuncu en az bir yarışa girdikten SONRA gösterilen metin. Sadece 'Use Localized Reminders' KAPALIYKEN kullanılır.")]
     [TextArea]
     public string reminderAfterPlaying =
         "Nasıl geçti? Geri Bildirim'e tıklayıp yaz — 30 saniyeni alır.";
@@ -108,6 +112,22 @@ public class MainMenuButtons : MonoBehaviour
     }
 
     /// <summary>
+    /// Hatırlatma yazısı LocalizedText ile DEĞİL kodla yazılıyor (metin
+    /// oyuncunun oynayıp oynamadığına göre değişiyor), bu yüzden dil
+    /// değişimini kendimiz dinlemek zorundayız — yoksa oyuncu ayarlardan
+    /// dili değiştirip ana menüye döndüğünde tek bu yazı eski dilde kalırdı.
+    /// </summary>
+    private void OnEnable()
+    {
+        GameLanguage.OnLanguageChanged += RefreshReminder;
+    }
+
+    private void OnDisable()
+    {
+        GameLanguage.OnLanguageChanged -= RefreshReminder;
+    }
+
+    /// <summary>
     /// Listener önce KALDIRILIP sonra ekleniyor: bu obje sahne geçişlerinde
     /// yeniden kurulabiliyor ve aynı butona iki kez bağlanmak tek tıkta iki
     /// kez tetiklenmeye yol açardı (aynı ders SteamLobbyManager'da yaşandı).
@@ -138,7 +158,10 @@ public class MainMenuButtons : MonoBehaviour
     {
         if (reminderText == null) return;
 
-        reminderText.text = hasPlayedThisSession ? reminderAfterPlaying : reminderBeforePlaying;
+        if (useLocalizedReminders)
+            reminderText.text = Loc.T(hasPlayedThisSession ? "menu.reminder.after" : "menu.reminder.before");
+        else
+            reminderText.text = hasPlayedThisSession ? reminderAfterPlaying : reminderBeforePlaying;
 
         // Yanıp sönme kapalıysa ya da henüz oynanmadıysa yazı sabit kalsın:
         // oyuna daha girmemiş birini geri bildirim için dürtmek anlamsız,

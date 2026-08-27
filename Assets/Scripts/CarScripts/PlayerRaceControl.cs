@@ -157,12 +157,9 @@ public class PlayerRaceController : NetworkBehaviour
 
         roleHintShown = true;
 
-        ScreenNotice.Show(
-            "YARIŞÇISIN\n" +
-            "W/S gaz-fren · A/D direksiyon · Space el freni\n" +
-            "Turlarını bitir. Sabotajcı checkpoint'lere tuzak kuruyor —\n" +
-            "pistten çıkarsan otomatik geri dönersin. Detay için ESC.",
-            8f);
+        // Ekranın ortası DEĞİL, sağ üstteki küçük panel (minimabın altı) —
+        // bkz. RaceHud.ShowRoleHint'teki gerekçe.
+        RaceHud.ShowRoleHint(Loc.T("hint.racer"), 15f);
     }
 
     public override void OnStopClient()
@@ -322,7 +319,7 @@ public class PlayerRaceController : NetworkBehaviour
     [TargetRpc]
     private void TargetFinalLap()
     {
-        ScreenNotice.Show("SON TUR!", 2.5f);
+        ScreenNotice.Show(Loc.T("race.finallap"), 2.5f);
     }
 
     [Server]

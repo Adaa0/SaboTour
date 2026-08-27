@@ -72,9 +72,13 @@ public class EngineFailureTrap : NetworkBehaviour
     [SerializeField] private float shakeStrength = 0.55f;
 
     [Header("Ekran Yazıları")]
-    [Tooltip("Arızayı YİYEN yarışçının ekranında görünür.")]
+    [Tooltip("AÇIK (önerilen): yazılar Loc.cs sözlüğünden, her oyuncunun KENDİ " +
+             "dilinde gelir. KAPALI: aşağıdaki iki alan aynen kullanılır (tek " +
+             "dilde). Sahnede kayıtlı eski yazıları geri istersen kapat.")]
+    [SerializeField] private bool useLocalizedMessages = true;
+    [Tooltip("Arızayı YİYEN yarışçının ekranında görünür. Sadece 'Use Localized Messages' KAPALIYKEN kullanılır.")]
     [SerializeField] private string victimMessage = "⚠ MOTOR ARIZASI!\nGüç kesildi";
-    [Tooltip("SABOTAJCININ ekranında görünür — butona bastığının karşılığını görmesi için. {0} yerine yakalanan oyuncunun adı yazılır.")]
+    [Tooltip("SABOTAJCININ ekranında görünür — butona bastığının karşılığını görmesi için. {0} yerine yakalanan oyuncunun adı yazılır. Sadece 'Use Localized Messages' KAPALIYKEN kullanılır.")]
     [SerializeField] private string saboteurMessage = "Motor arızası tetiklendi!\n{0} yakalandı";
     [SerializeField] private float noticeSeconds = 2.5f;
 
@@ -293,12 +297,15 @@ public class EngineFailureTrap : NetworkBehaviour
         SaboteurController saboteur = FindAnyObjectByType<SaboteurController>();
         if (saboteur == null || saboteur.connectionToClient == null) return;
 
-        string message = string.IsNullOrEmpty(saboteurMessage)
-            ? null
-            : string.Format(saboteurMessage, victimLabel);
-
-        if (!string.IsNullOrEmpty(message))
-            TargetSaboteurFeedback(saboteur.connectionToClient, message);
+        // 🚨 DİL: mesaj artık SUNUCUDA formatlanmıyor, sadece yakalanan
+        // oyuncunun ADI gönderiliyor — cümleyi sabotajcının kendi makinesi
+        // kuruyor. Önceden burada string.Format yapılıyordu ve sunucunun dili
+        // kazanıyordu: Türkçe oynayan bir host'un yanındaki İngilizce oynayan
+        // sabotajcı, ayarını İngilizce yapmış olmasına rağmen Türkçe uyarı
+        // görürdü. Aynı kural her TargetRpc/ClientRpc için geçerli — ağdan
+        // HAZIR CÜMLE değil, VERİ geçir; cümleyi alıcı kursun.
+        if (!string.IsNullOrEmpty(victimLabel))
+            TargetSaboteurFeedback(saboteur.connectionToClient, victimLabel);
     }
 
     #endregion
@@ -332,14 +339,26 @@ public class EngineFailureTrap : NetworkBehaviour
                              "arıza uygulanamadı (ekran yazısı yine de gösterilecek).");
         }
 
-        if (!string.IsNullOrEmpty(victimMessage))
+        // Bu bir TargetRpc, yani KURBANIN kendi makinesinde çalışıyor —
+        // çeviri burada yapıldığı için doğru dile düşüyor.
+        if (useLocalizedMessages)
+            ScreenNotice.Show(Loc.T("warn.enginefailure"), noticeSeconds);
+        else if (!string.IsNullOrEmpty(victimMessage))
             ScreenNotice.Show(victimMessage, noticeSeconds);
     }
 
-    /// <summary>Sadece sabotajcının ekranında çalışır.</summary>
+    /// <summary>
+    /// Sadece sabotajcının ekranında çalışır. Parametre HAZIR CÜMLE değil,
+    /// yakalanan oyuncunun ADI — cümle burada, sabotajcının kendi dilinde
+    /// kuruluyor (bkz. NotifySaboteur'daki açıklama).
+    /// </summary>
     [TargetRpc]
-    private void TargetSaboteurFeedback(NetworkConnection target, string message)
+    private void TargetSaboteurFeedback(NetworkConnection target, string victimLabel)
     {
+        string message = useLocalizedMessages
+            ? Loc.T("warn.caught", victimLabel)
+            : string.Format(saboteurMessage, victimLabel);
+
         ScreenNotice.Show(message, noticeSeconds);
     }
 

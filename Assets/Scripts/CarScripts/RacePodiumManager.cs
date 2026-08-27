@@ -28,9 +28,47 @@ using Mirror;
 /// </summary>
 public class RacePodiumManager : NetworkBehaviour
 {
-    [Header("Sabotajcı Kazanma Süresi (Yarışçı Sayısına Göre)")]
-    [Tooltip("index 0 = 1 yarışçı, index 1 = 2 yarışçı, ... index 4 = 5 yarışçı. Bu süre (saniye) dolup hiçbir yarışçı bitirmemişse sabotajcı kazanır.")]
-    [SerializeField] private float[] raceTimeLimitByRacerCount = { 300f, 290f, 280f, 275f, 270f };
+    [Header("Sabotajcı Kazanma Süresi (Saf Süre × Sabotaj Çarpanı)")]
+    [Tooltip("🚨 25 AĞUSTOS 2026'DA SABİT TABLODAN BU FORMÜLE GEÇİLDİ.\n\n" +
+             "ESKİ SİSTEM (kaldırıldı): yarışçı sayısına göre sabit bir dizi " +
+             "{300,290,280,275,270} — pist uzunluğuna HİÇ bakmıyordu, yani " +
+             "kısa pist düşen yarışçı kolay kazanıyor, uzun pist düşen " +
+             "zorlanıyordu (600 pistlik ölçümde ~%35 uzunluk farkı vardı).\n\n" +
+             "YENİ FORMÜL: süre = saf_tur_süresi × tur_sayısı × sabotaj_çarpanı. " +
+             "'Saf tur süresi' aşağıdaki Estimated Avg Lap Speed Kmh'den, " +
+             "gerçek pist uzunluğundan hesaplanıyor — pist uzunsa süre de " +
+             "otomatik uzuyor. Sabotaj çarpanı aşağıdaki eğriden geliyor.")]
+    [SerializeField] private bool useLegacyFixedTimeTable = false;
+
+    [Tooltip("GEÇİCİ/YEDEK: eski sabit tablo. Sadece 'Use Legacy Fixed Time " +
+             "Table' AÇIKSA kullanılıyor — yeni formülde tutulmuyor ama " +
+             "karşılaştırma/geri dönüş için silinmedi.")]
+    [SerializeField] private float[] legacyRaceTimeLimitByRacerCount = { 300f, 290f, 280f, 275f, 270f };
+
+    [Tooltip("SABOTAJ ÇARPANI — yarışçı sayısına göre (X ekseni = yarışçı " +
+             "sayısı, Y ekseni = çarpan). Süre = saf süre × bu çarpan.\n\n" +
+             "🎯 x=1 ve x=2 GERÇEK ÖLÇÜM (25 Ağustos 2026, geliştirici + " +
+             "arkadaşları, 'herkes tryhard oynadı'): 1v1'de gerçek 1. tur " +
+             "süresi saf tahminin ×1.96'sı, 2v1'de (öndeki yarışçı) ×1.38'i " +
+             "çıktı — yani sabotajcı TEK yarışçıya odaklanınca yavaşlatma " +
+             "neredeyse İKİ KATINA çıkıyor, dikkat ikiye bölününce çok düşüyor.\n\n" +
+             "⚠️ x=3,4,5 HENÜZ ÖLÇÜLMEDİ — tahmini/enterpolasyon değerler " +
+             "(1.20, 1.10, 1.05), aynı azalan eğilimin devamı varsayılarak " +
+             "kondu. 3v1/4v1/5v1 gerçek veri geldiğinde BU EĞRİYİ Inspector'dan " +
+             "elle düzelt (kod değişikliği GEREKMİYOR) — TrackPropScatter'daki " +
+             "'densityByDistance' eğrisiyle birebir aynı desen: ölçülene kadar " +
+             "bilgiyle tahmin, ölçülünce gerçek veriyle düzeltme.")]
+    [SerializeField]
+    private AnimationCurve sabotageSlowdownMultiplierByRacerCount = new AnimationCurve(
+        new Keyframe(1f, 1.90f),
+        new Keyframe(2f, 1.40f),
+        new Keyframe(3f, 1.20f),
+        new Keyframe(4f, 1.10f),
+        new Keyframe(5f, 1.05f))
+    {
+        preWrapMode = WrapMode.ClampForever,
+        postWrapMode = WrapMode.ClampForever
+    };
 
     [Header("Podyum - Yarışçı Kolonları (en fazla 5, sırayla)")]
     [Tooltip("Her kolonun görünür/aktif GameObject'i. Yarışçı sayısı kadarı baştan itibaren aktif edilir, gerisi kapalı kalır.")]
@@ -295,26 +333,99 @@ public class RacePodiumManager : NetworkBehaviour
         base.OnStartServer();
         elapsed = 0f;
         raceOutcome = RaceOutcome.Ongoing;
-        raceTimeLimit = ResolveRaceTimeLimit();
-        syncedTimeLimit = raceTimeLimit;   // HUD çubuğu bunu okuyor
         PlayerRaceController.OnPlayerFinishedRace += HandleRacerFinished;
+
+        // 🚨 raceTimeLimit BURADA HESAPLANMIYOR — bilerek. Formül pist
+        // uzunluğuna bakıyor (ComputeTrackLengthMeters → FindAnyObjectByType
+        // <TrackGenerator>) ve OnStartServer'ın TrackSeedSync'in pisti
+        // üretmesinden ÖNCE mi SONRA mı çalışacağı Unity'de GARANTİ DEĞİL
+        // (iki ayrı NetworkBehaviour, sıraları senkron değil). Hesaplama
+        // artık ServerTryArmCountdown()'a taşındı — o nokta ancak TÜM
+        // araçlar doğduktan sonra çalışıyor, yani pist kesin hazır.
     }
 
+    /// <summary>
+    /// Sabotajcının kazanma süresini belirler.
+    ///
+    /// 🚨 25 AĞUSTOS 2026: sabit tablodan "saf süre × sabotaj çarpanı"
+    /// formülüne geçildi (bkz. Inspector'daki alan açıklamaları). Eski
+    /// sistem `useLegacyFixedTimeTable` ile hâlâ açılabiliyor — yeni
+    /// formül testte beklenmedik davranırsa (görünmeyen çengelde), demo
+    /// öncesi hızlı bir geri dönüş yolu olsun diye.
+    /// </summary>
     [Server]
     private float ResolveRaceTimeLimit()
     {
-        if (raceTimeLimitByRacerCount == null || raceTimeLimitByRacerCount.Length == 0)
+        if (useLegacyFixedTimeTable)
         {
-            Debug.LogWarning("[RacePodium] Race Time Limit By Racer Count dizisi BOŞ — sabotajcının süreyle kazanması devre dışı kaldı.");
+            if (legacyRaceTimeLimitByRacerCount == null || legacyRaceTimeLimitByRacerCount.Length == 0)
+            {
+                Debug.LogWarning("[RacePodium] Legacy Race Time Limit dizisi BOŞ — sabotajcının süreyle kazanması devre dışı kaldı.");
+                return -1f;
+            }
+
+            int legacyRacerCount = (NetworkManager.singleton as MyNetworkManager)?.RacerCount ?? 1;
+            legacyRacerCount = Mathf.Clamp(legacyRacerCount, 1, legacyRaceTimeLimitByRacerCount.Length);
+
+            float legacyLimit = legacyRaceTimeLimitByRacerCount[legacyRacerCount - 1];
+            Debug.Log($"[RacePodium] (ESKİ SABİT TABLO) Yarışçı sayısı {legacyRacerCount} → süre {legacyLimit}sn.");
+            return legacyLimit;
+        }
+
+        float pureLapSeconds = ComputePureLapSeconds();
+        if (pureLapSeconds <= 0f)
+        {
+            Debug.LogWarning("[RacePodium] Pist uzunluğu okunamadı (TrackGenerator bulunamadı ya da pist boş) — sabotajcının süreyle kazanması devre dışı kaldı.");
             return -1f;
         }
 
+        int laps = ResolveMaxLaps();
         int racerCount = (NetworkManager.singleton as MyNetworkManager)?.RacerCount ?? 1;
-        racerCount = Mathf.Clamp(racerCount, 1, raceTimeLimitByRacerCount.Length);
+        float multiplier = sabotageSlowdownMultiplierByRacerCount.Evaluate(racerCount);
 
-        float limit = raceTimeLimitByRacerCount[racerCount - 1];
-        Debug.Log($"[RacePodium] Yarışçı sayısı {racerCount} → sabotajcı kazanma süresi {limit}sn (yarış boyunca sabit).");
+        float limit = pureLapSeconds * laps * multiplier;
+        Debug.Log($"[RacePodium] Saf tur {pureLapSeconds:F0}sn × {laps} tur × sabotaj çarpanı {multiplier:F2} " +
+                  $"(yarışçı sayısı={racerCount}) → süre sınırı {limit:F0}sn.");
         return limit;
+    }
+
+    /// <summary>
+    /// Pistin toplam uzunluğu (metre). Server VE her client AYNI formülü
+    /// kullanıyor — pist synced seed'den deterministik üretildiği için
+    /// hepsi aynı sonucu buluyor, sonucu ağdan göndermeye gerek yok.
+    /// </summary>
+    private float ComputeTrackLengthMeters()
+    {
+        TrackGenerator trackGenerator = FindAnyObjectByType<TrackGenerator>();
+        List<Vector3> points = trackGenerator != null ? trackGenerator.GetTrackPoints() : null;
+        if (points == null || points.Count < 3) return -1f;
+
+        float total = 0f;
+        for (int i = 0; i < points.Count; i++)
+            total += Vector3.Distance(points[i], points[(i + 1) % points.Count]);
+
+        return total;
+    }
+
+    /// <summary>
+    /// "Saf" (sabotaj yokmuş gibi) bir turun tahmini süresi —
+    /// `estimatedAvgLapSpeedKmh`'e göre. -1 = pist henüz üretilmemiş.
+    /// </summary>
+    private float ComputePureLapSeconds()
+    {
+        float lengthMeters = ComputeTrackLengthMeters();
+        if (lengthMeters <= 0f) return -1f;
+
+        return lengthMeters / (estimatedAvgLapSpeedKmh / 3.6f);
+    }
+
+    /// <summary>Sahnedeki herhangi bir araçtan tur sayısını okur (hepsi aynı).</summary>
+    private int ResolveMaxLaps()
+    {
+        foreach (PlayerRaceController p in PlayerRaceController.AllPlayers)
+            if (p != null) return p.maxLaps;
+
+        return 3;
     }
 
     public override void OnStopServer()
@@ -392,6 +503,22 @@ public class RacePodiumManager : NetworkBehaviour
 
         if (!everyoneHere && !waitedTooLong) return;
 
+        // 🚨 SÜRE SINIRI ARTIK BURADA HESAPLANIYOR (eskiden OnStartServer'da
+        // idi). Sebep: pist uzunluğuna bakan formül, `TrackGenerator`ın
+        // pisti ÜRETMİŞ olmasını gerektiriyor — bu nokta ancak araçlar
+        // doğduktan sonra çalıştığı için (SpawnPlayerWhenTrackReady zaten
+        // pist hazır olana kadar bekliyor) pist kesin hazır oluyor.
+        //
+        // raceTimeLimit + syncedTimeLimit + raceStartTime AYNI serverdaki
+        // fonksiyon çağrısında set ediliyor — üçü de plain [SyncVar] (hook
+        // YOK), yani Mirror hepsini AYNI tick'te tek pakette senkronluyor.
+        // Client'ta hiçbiri "yarısı güncel" bir karede görünmüyor (aynı
+        // ders: SkillCooldownState / RaceOutcome'daki hook-sıralı deserialize
+        // sorunuyla KARIŞTIRMA — o hook'lardan kaynaklanıyordu, burada hook
+        // olmadığı için o risk yok).
+        raceTimeLimit = ResolveRaceTimeLimit();
+        syncedTimeLimit = raceTimeLimit;   // HUD çubuğu + pist bilgisi ekranı bunu okuyor
+
         // Toplam bekleme: önce pist bilgisi ekranı, sonra "3-2-1". İkisi
         // ayrı pencereler — UpdateStartState bunları `remaining`in
         // countdownSeconds'ın üstünde/altında olmasına göre ayırıyor.
@@ -428,7 +555,7 @@ public class RacePodiumManager : NetworkBehaviour
             {
                 RaceStarted = true;
                 StartLockActive = false;
-                ScreenNotice.Show("BAŞLA!", 1.2f);
+                ScreenNotice.Show(Loc.T("race.go"), 1.2f);
             }
 
             return;
@@ -472,34 +599,32 @@ public class RacePodiumManager : NetworkBehaviour
     /// </summary>
     private void ShowTrackInfoNotice()
     {
-        TrackGenerator trackGenerator = FindAnyObjectByType<TrackGenerator>();
-        List<Vector3> points = trackGenerator != null ? trackGenerator.GetTrackPoints() : null;
+        float lengthMeters = ComputeTrackLengthMeters();
 
         // Pist henüz üretilmemişse (olmaması gereken bir durum) sessizce
         // geç — bu bilgi ekranı kritik değil, gösterilmemesi yarışı bozmaz.
-        if (points == null || points.Count < 3) return;
-
-        float lengthMeters = 0f;
-        for (int i = 0; i < points.Count; i++)
-            lengthMeters += Vector3.Distance(points[i], points[(i + 1) % points.Count]);
-
-        int laps = 3;
-        foreach (PlayerRaceController p in PlayerRaceController.AllPlayers)
-        {
-            if (p == null) continue;
-            laps = p.maxLaps;
-            break;
-        }
+        if (lengthMeters <= 0f) return;
 
         float pureLapSeconds = lengthMeters / (estimatedAvgLapSpeedKmh / 3.6f);
+        int laps = ResolveMaxLaps();
+
+        // `TimeLimit` (syncedTimeLimit) burada okunuyor — client'ta bunun
+        // ne zaman güncel olduğu ServerTryArmCountdown'daki nota bağlı
+        // (raceStartTime ile AYNI tick'te set ediliyor, hook yok, güvenli).
         float limit = TimeLimit;
         float targetLapSeconds = laps > 0 ? limit / laps : 0f;
         float margin = limit - pureLapSeconds * laps;
 
-        string message =
-            $"PİST: {lengthMeters / 1000f:F1} km\n" +
-            $"Saf tur tahmini ~{pureLapSeconds:F0} sn · süre sınırı {limit:F0} sn\n" +
-            $"Hedef ortalama tur: {targetLapSeconds:F0} sn (pay {margin:F0} sn)";
+        // Sayılar burada metne çevriliyor, cümle kalıbı sözlükten geliyor.
+        // Bu metot HER CLIENT'ta ayrı ayrı çalışıyor (pist synced seed'den
+        // deterministik üretiliyor, ağdan veri geçmiyor) — yani herkes
+        // kendi dilinde görüyor, ekstra bir şey yapmaya gerek yok.
+        string message = Loc.T("track.info",
+            (lengthMeters / 1000f).ToString("F1"),
+            pureLapSeconds.ToString("F0"),
+            limit.ToString("F0"),
+            targetLapSeconds.ToString("F0"),
+            margin.ToString("F0"));
 
         ScreenNotice.Show(message, trackInfoNoticeSeconds);
     }
@@ -522,17 +647,18 @@ public class RacePodiumManager : NetworkBehaviour
         // Kalan oyunculara SEBEBİ de söyle. Bu olmadan podyum bir anda
         // açılıyor ve oyuncu neden kazandığını/kaybettiğini anlamıyor —
         // "oyun bozuldu" izlenimi veriyordu.
-        RpcAnnounceEarlyEnd(saboteurWins
-            ? "Tüm yarışçılar oyundan ayrıldı.\nYarış sona erdi."
-            : "Sabotajcı oyundan ayrıldı.\nYarış sona erdi.");
+        // 🚨 DİL: hazır cümle DEĞİL, hangi durumun olduğu gönderiliyor.
+        // Cümleyi her client kendi dilinde kuruyor. Önceden metin burada
+        // (sunucuda) seçiliyordu ve herkese sunucunun dilinde gidiyordu.
+        RpcAnnounceEarlyEnd(saboteurWins);
 
         ServerEndRace(saboteurWins);
     }
 
     [ClientRpc]
-    private void RpcAnnounceEarlyEnd(string message)
+    private void RpcAnnounceEarlyEnd(bool allRacersLeft)
     {
-        ScreenNotice.Show(message, 6f);
+        ScreenNotice.Show(Loc.T(allRacersLeft ? "end.allracersleft" : "end.saboteurleft"), 6f);
     }
 
     [Server]

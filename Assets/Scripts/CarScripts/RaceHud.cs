@@ -56,6 +56,19 @@ public class RaceHud : MonoBehaviour
     public Button rematchButton;
     public TMP_Text rematchInfoText;
 
+    [Header("Rol İpucu (sağ üstte, minimabın altında)")]
+    [Tooltip("Yarışın başında bir kez çıkan kısa rol hatırlatması. " +
+             "Prefabta yoksa ipucu ekranın ortasındaki ScreenNotice'a düşer " +
+             "(null-güvenli) — bu durumda 'SaboTour > Yarış HUD Prefabını " +
+             "Güncelle (rol ipucu)' aracını çalıştır.")]
+    public GameObject roleHintRoot;
+    public TMP_Text roleHintText;
+
+    // İpucunun kaybolacağı an. Time.unscaledTime kullanılıyor: yarış
+    // sırasında timeScale'e dokunulmuyor ama bir gün duraklatma eklenirse
+    // ipucu menüde donup kalmasın.
+    private float roleHintHideTime = -1f;
+
     [Header("Renkler")]
     [Tooltip("Süre bolken çubuğun rengi.")]
     public Color calmColor = new Color(0.35f, 0.85f, 0.55f);
@@ -124,11 +137,45 @@ public class RaceHud : MonoBehaviour
         if (instance == this) instance = null;
     }
 
+    /// <summary>
+    /// Rol ipucunu sağ üstte, minimabın altındaki küçük panelde gösterir.
+    ///
+    /// ── NEDEN ScreenNotice DEĞİL ──
+    /// İpucu eskiden `ScreenNotice` ile ekranın TAM ORTASINDA çıkıyordu ve
+    /// 8-11 saniye boyunca pistin üstünü kapatıyordu — yarışın ilk saniyeleri
+    /// tam da oyuncunun ekrana en çok ihtiyaç duyduğu an. Üstelik ScreenNotice
+    /// geri sayım / motor arızası / "SON TUR!" ile paylaşılan tek bir yazı
+    /// alanı; uzun bir ipucu orada dururken gelen kritik bir uyarı onun
+    /// üstüne yazıyordu.
+    ///
+    /// Yeni yer sağ üst köşe (yarışçıda minimabın hemen altı): göz köşeye
+    /// kayınca okunuyor, sürüşü hiç engellemiyor. Sabotajcıda ekranda minimap
+    /// yok ama aynı konum kullanılıyor — iki rolde de aynı yerde olması
+    /// "buraya bak" alışkanlığı kuruyor.
+    /// </summary>
+    public static void ShowRoleHint(string text, float seconds)
+    {
+        // YEDEK YOL: prefab henüz güncellenmemişse ipucu kaybolmasın, eski
+        // davranışa (ekran ortası) düşsün. Aynı desen crosshair ve ekran
+        // mesajında da var — eksik bir prefab yüzünden oyuncunun bilgiyi
+        // hiç görmemesi kabul edilemez.
+        if (instance == null || instance.roleHintRoot == null || instance.roleHintText == null)
+        {
+            ScreenNotice.Show(text, seconds);
+            return;
+        }
+
+        instance.roleHintText.text = text;
+        instance.roleHintRoot.SetActive(true);
+        instance.roleHintHideTime = Time.unscaledTime + seconds;
+    }
+
     void Update()
     {
         RacePodiumManager podium = RacePodiumManager.Instance;
 
         UpdateLeaderboard(podium != null);
+        UpdateRoleHint(podium != null);
 
         // Yarış sahnesinde değilsek (lobi, ana menü) HUD tamamen kapalı.
         if (podium == null)
@@ -139,6 +186,23 @@ public class RaceHud : MonoBehaviour
 
         UpdateBar(podium);
         UpdateRematch(podium);
+    }
+
+    /// <summary>
+    /// Süresi dolan ipucunu gizler. Yarış sahnesinden çıkıldığında da
+    /// gizliyor — sıralama tablosuyla aynı gerekçe: bu panel
+    /// DontDestroyOnLoad bir prefabın içinde, kimse kapatmazsa lobinin
+    /// üstünde asılı kalır.
+    /// </summary>
+    private void UpdateRoleHint(bool inRace)
+    {
+        if (roleHintRoot == null || !roleHintRoot.activeSelf) return;
+
+        if (!inRace || (roleHintHideTime > 0f && Time.unscaledTime >= roleHintHideTime))
+        {
+            roleHintRoot.SetActive(false);
+            roleHintHideTime = -1f;
+        }
     }
 
     private void SetVisible(bool value)
@@ -276,7 +340,7 @@ public class RaceHud : MonoBehaviour
         }
 
         if (rematchInfoText != null)
-            rematchInfoText.text = isHost ? "" : "Host yeni yarışı başlatabilir.";
+            rematchInfoText.text = isHost ? "" : Loc.T("race.hostrestarts");
     }
 
     private void OnRematchClicked()

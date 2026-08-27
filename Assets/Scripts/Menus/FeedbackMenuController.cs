@@ -105,7 +105,7 @@ public class FeedbackMenuController : MonoBehaviour
         if (Time.unscaledTime < nextAllowedSendTime)
         {
             int kalan = Mathf.CeilToInt(nextAllowedSendTime - Time.unscaledTime);
-            SetStatus($"Az önce gönderdin — {kalan} saniye sonra tekrar deneyebilirsin.");
+            SetStatus(Loc.T("fb.cooldown", kalan));
             return;
         }
 
@@ -114,13 +114,13 @@ public class FeedbackMenuController : MonoBehaviour
 
         if (string.IsNullOrWhiteSpace(message))
         {
-            SetStatus("Önce bir şeyler yaz.");
+            SetStatus(Loc.T("fb.empty"));
             return;
         }
 
         sending = true;
         if (gonderButton != null) gonderButton.interactable = false;
-        SetStatus("Gönderiliyor…");
+        SetStatus(Loc.T("fb.sending"));
 
         StartCoroutine(FeedbackSender.Send(formUrl, nameEntryId, messageEntryId, contextEntryId,
                                            playerName, message, OnSendFinished));

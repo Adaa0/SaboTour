@@ -196,8 +196,10 @@ public class SaboteurController : NetworkBehaviour
     [Tooltip("Sabotajcı ilk kez doğduğunda ekranda kısa bir kullanım ipucu göster.")]
     [SerializeField] private bool showRoleHint = true;
 
-    [Tooltip("İpucunun ekranda kalma süresi (saniye).")]
-    [SerializeField] private float roleHintSeconds = 11f;
+    [Tooltip("İpucunun ekranda kalma süresi (saniye). Sabotajcınınki yarışçıdan " +
+             "uzun: 3 adımlık bir akış + marker renkleri okunacak ve sabotajcı " +
+             "sürmediği için ekrana bakacak vakti var.")]
+    [SerializeField] private float roleHintSeconds = 20f;
 
     // İpucu "BAŞLA!" yazısının hemen ardından çıksın diye küçük bir gecikme.
     private float roleHintTimer = -1f;
@@ -228,13 +230,9 @@ public class SaboteurController : NetworkBehaviour
 
         roleHintShown = true;
 
-        ScreenNotice.Show(
-            "SABOTAJCISIN\n" +
-            "1) Masadaki haritadan bir checkpoint'e tıkla\n" +
-            "2) Bir skil butonuna bas\n" +
-            "3) Büyük kırmızı butona basıp ateşle\n" +
-            "Yeşil marker hazır, kırmızı seçili/soğuyor. Detay için ESC.",
-            roleHintSeconds);
+        // Ekranın ortası DEĞİL, sağ üstteki küçük panel —
+        // bkz. RaceHud.ShowRoleHint'teki gerekçe.
+        RaceHud.ShowRoleHint(Loc.T("hint.saboteur"), roleHintSeconds);
     }
 
     // Yarış bitip podyum sahnesine geçilince true olur — kontrol tamamen

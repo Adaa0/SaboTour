@@ -90,7 +90,7 @@ public static class FeedbackSender
 
             if (request.result == UnityWebRequest.Result.Success)
             {
-                onDone?.Invoke(true, "Teşekkürler, ulaştı!");
+                onDone?.Invoke(true, Loc.T("fb.sent"));
             }
             else
             {
@@ -119,17 +119,16 @@ public static class FeedbackSender
             case 403:
                 // Form oturum açma istiyor: "E-posta adreslerini topla" açık,
                 // ya da form bir kuruma (okul/iş hesabı) kısıtlanmış.
-                return "Geri bildirim şu an kapalı görünüyor. (Geliştirici: formun " +
-                       "oturum açma / e-posta toplama ayarlarını kapat.)";
+                return Loc.T("fb.err.closed");
 
             case 404:
-                return "Gönderim adresi bulunamadı. (Geliştirici: Form Url yanlış.)";
+                return Loc.T("fb.err.notfound");
 
             case 400:
-                return "Gönderi reddedildi. (Geliştirici: entry kimliklerini kontrol et.)";
+                return Loc.T("fb.err.rejected");
 
             default:
-                return "Gönderilemedi — internet bağlantını kontrol edip tekrar dener misin?";
+                return Loc.T("fb.err.network");
         }
     }
 
