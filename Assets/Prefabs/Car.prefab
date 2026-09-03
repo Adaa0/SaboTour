@@ -12,8 +12,9 @@ GameObject:
   - component: {fileID: 9099039830617670985}
   - component: {fileID: 1356680096418970876}
   - component: {fileID: 6389293460842274909}
-  - component: {fileID: 1519694301959161758}
   - component: {fileID: 85245783611660214}
+  - component: {fileID: 1519694301959161758}
+  - component: {fileID: 85245783611660299}
   m_Layer: 0
   m_Name: CarCam
   m_TagString: Player
@@ -123,23 +124,6 @@ MonoBehaviour:
   IgnoreTag: 
   AimDistance: 200
   NoiseCancellation: 1
---- !u!114 &1519694301959161758
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 101126786422396866}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c4348b861193fd340ad96b60dd8aec6b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ExplosionCameraShake
-  maxPositionShake: 2
-  maxRotationShake: 10
-  frequency: 22
-  decayPerSecond: 2
-  showDebugLogs: 1
 --- !u!114 &85245783611660214
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -157,6 +141,40 @@ MonoBehaviour:
   speedForMaxFov: 180
   smoothing: 2.5
   fovCurvePower: 1.6
+--- !u!114 &1519694301959161758
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 101126786422396866}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c4348b861193fd340ad96b60dd8aec6b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ExplosionCameraShake
+  maxPositionShake: 2
+  maxRotationShake: 10
+  frequency: 22
+  decayPerSecond: 2
+  showDebugLogs: 1
+--- !u!114 &85245783611660299
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 101126786422396866}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b7e3a9c14d2f8e6a05c1b3d7f9028461, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RacerLookAround
+  enableLookBack: 1
+  lookBackKey: 51
+  lookBackAngle: 180
+  blendSeconds: 0
+  pivotHeight: 1.5
 --- !u!1 &155675032606782965
 GameObject:
   m_ObjectHideFlags: 0
@@ -5508,7 +5526,7 @@ MonoBehaviour:
   restLength: 0.75
   springTravel: 0.1
   wheelRadius: 0.6
-  acceleration: 20
+  acceleration: 15
   maxSpeed: 220
   deceleration: 10
   steerStrength: 30
@@ -5556,7 +5574,12 @@ MonoBehaviour:
   lowSpeedThreshold: 20
   tireRotSpeed: 3000
   maxSteeringAngle: 30
-  minSideSkidVelocity: 8
+  minSkidSlipAngle: 30
+  minSkidSpeedKmh: 25
+  driftFactorForSkid: 0.35
+  iceSkidAngleFactor: 0.35
+  useSlipAngleForSkid: 1
+  minSideSkidVelocity: 15
   airDrag: 0.1
   rollingResistance: 0.5
   driftGripReduction: 0.75
@@ -5602,9 +5625,9 @@ MonoBehaviour:
   CheckpointInfo: {fileID: 0}
   TotalTimeText: {fileID: 0}
   LastLapTimeText: {fileID: 0}
-  checkpointClip: {fileID: 0}
+  checkpointClip: {fileID: 8300000, guid: 65340003c8cde2848955a1e170a3a3f7, type: 3}
   checkpointVolume: 0.3
-  lapCompleteClip: {fileID: 8300000, guid: 2ff348a0053c44041ae64613a88164c5, type: 3}
+  lapCompleteClip: {fileID: 8300000, guid: 829cd18e59ebda64395cf3a20af91395, type: 3}
   raceSfxVolume: 0.5
 --- !u!114 &4490114615830032202
 MonoBehaviour:
@@ -5685,25 +5708,39 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a16600c91eee57942a6f322e473d684a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CarAudio
-  engineLoop: {fileID: 8300000, guid: 1e686a05fbb38854893444d2af594ee3, type: 3}
-  idlePitch: 0.75
-  maxPitch: 2.2
-  idleVolume: 0.1
-  maxVolume: 0.5
+  idleClip: {fileID: 8300000, guid: c502041826854664683f9914f63427b0, type: 3}
+  lowClip: {fileID: 8300000, guid: 7bc538013cfcefd44b24c4ba77b0250f, type: 3}
+  medClip: {fileID: 8300000, guid: a2abedf8c3622d94c9341d09f34108f9, type: 3}
+  highClip: {fileID: 8300000, guid: 30b8ff3730c5d4e428cd653a5e5b05ee, type: 3}
+  lowRpm: 0.26
+  medRpm: 0.54
+  rpmCurve: 1.2
+  engineMinPitch: 0.7
+  engineMaxPitch: 1.55
+  idleVolume: 0.06
+  maxVolume: 0.28
   volumeRamp: 2
-  speedForMaxPitch: 220
-  pitchSmoothing: 6
-  skidLoop: {fileID: 0}
-  skidVolume: 0.6
+  speedForMaxPitch: 215
+  pitchSmoothing: 3.5
+  idleReleaseSpeedKmh: 6
+  useGearShifts: 0
+  gearMinPitch: 0.82
+  gearMaxPitch: 1.35
+  gearBlend: 0.15
+  gearHysteresis: 0.3
+  gearShiftCooldown: 0.4
+  skidLoop: {fileID: 8300000, guid: bff5a4dd96319e140b17df7bce2a5bc5, type: 3}
+  skidVolume: 0
   skidFadeSpeed: 8
   crashClips:
-  - {fileID: 8300000, guid: 462bfdb734804f645a7b20c3db0cf54a, type: 3}
+  - {fileID: 8300000, guid: 09ccdca460882564299ecaf42905ab72, type: 3}
   minCrashSpeed: 6
   loudCrashSpeed: 22
   crashVolume: 0.9
   crashCooldown: 0.25
   crashOnlyForOwnCar: 0
-  landingClip: {fileID: 0}
+  raceEndFadeSpeed: 2
+  landingClip: {fileID: 8300000, guid: 1746199ad42283c458659c081b2e5062, type: 3}
   landingVolume: 0.7
   minAirTimeForLanding: 0.35
 --- !u!114 &7789937855272722457
