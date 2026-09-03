@@ -110,8 +110,10 @@ public class CarAudio : MonoBehaviour
     [SerializeField] private float skidFadeSpeed = 8f;
 
     [Header("Çarpışma Sesi")]
-    [Tooltip("Çarpma sesleri. Birden fazla eklersen her çarpışmada rastgele biri seçilir (aynı sesi tekrar tekrar duymak çok yapay hissettiriyor).")]
+    [Tooltip("Çarpma sesleri (metal/duvar). Birden fazla eklersen her çarpışmada rastgele biri seçilir (aynı sesi tekrar tekrar duymak çok yapay hissettiriyor).")]
     [SerializeField] private AudioClip[] crashClips;
+    [Tooltip("AĞACA / KAYAYA / ÇALIYA çarpınca çalar (odunsu/donuk ses). Boş bırakılırsa prop çarpmasında da normal `crashClips` çalar. Prop katmanları: Prop / PropSmall / PropFar / PropTree.")]
+    [SerializeField] private AudioClip[] propHitClips;
     [Tooltip("Bu çarpma hızının (m/s) altındaki temaslar ses çıkarmaz — duvara sürtünürken sürekli çarpma sesi gelmesin diye.")]
     [SerializeField] private float minCrashSpeed = 6f;
     [Tooltip("Sert çarpışmanın 'tam ses' sayılacağı hız. Daha yavaş çarpmalar orantılı olarak daha kısık duyulur.")]
@@ -156,10 +158,21 @@ public class CarAudio : MonoBehaviour
     private float lastCrashTime = -99f;
     private bool wasGrounded = true;
     private float airborneTime;
+    private int propLayerBits;        // Prop / PropSmall / PropFar / PropTree katmanlarının bit maskesi
 
     void Awake()
     {
         car = GetComponent<CarController>();
+
+        // Ağaç/kaya çarpması ile duvar çarpmasını ayırmak için prop
+        // katmanlarının maskesi. NameToLayer bilinmeyen isimde -1 döner,
+        // o bit yok sayılıyor (1 << -1 tanımsız olduğu için elde ediyoruz).
+        propLayerBits = 0;
+        foreach (string layerName in new[] { "Prop", "PropSmall", "PropFar", "PropTree" })
+        {
+            int layer = LayerMask.NameToLayer(layerName);
+            if (layer >= 0) propLayerBits |= 1 << layer;
+        }
 
         // İki SÜREKLİ ses (motor + cızırtı) havuzdan değil, arabanın kendi
         // üstündeki AudioSource'lardan çalıyor — çünkü loop'lu ve arabayla
@@ -484,7 +497,13 @@ public class CarAudio : MonoBehaviour
 
     void OnCollisionEnter(Collision collision)
     {
-        if (crashClips == null || crashClips.Length == 0) return;
+        // Ağaç/kaya prop'una mı çarptık, yoksa duvara/başka arabaya mı?
+        int otherLayer = collision.collider != null ? collision.collider.gameObject.layer : collision.gameObject.layer;
+        bool hitProp = (propLayerBits & (1 << otherLayer)) != 0;
+        AudioClip[] clips = (hitProp && propHitClips != null && propHitClips.Length > 0)
+                            ? propHitClips
+                            : crashClips;
+        if (clips == null || clips.Length == 0) return;
         // Podyumda araçlar kolonların üstüne düşüp birbirine/kolona değiyor —
         // zafer anında çarpma sesleri patlamasın.
         if (RaceIsOver()) return;
@@ -510,6 +529,6 @@ public class CarAudio : MonoBehaviour
         // yandan sıyırma ile burundan çarpma kulakta farklı yerden gelsin.
         Vector3 point = collision.contactCount > 0 ? collision.GetContact(0).point : transform.position;
 
-        SfxPlayer.PlayRandomAt(crashClips, point, volume, 0.08f);
+        SfxPlayer.PlayRandomAt(clips, point, volume, 0.08f);
     }
 }

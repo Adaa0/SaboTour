@@ -7,8 +7,9 @@ using Mirror;
 /// GameObject'i üzerine eklenmesi yeterli (zaten NetworkIdentity'si var,
 /// ayrı bir obje/NetworkIdentity kurmaya gerek yok).
 ///
-/// GEÇİCİ TEST GİRİŞİ: SaboteurSkillInput'taki F tuşu ile tetikleniyor
-/// (bkz. CLAUDE.md). İleride minimap/harita butonuna bağlanacak.
+/// GİRİŞ: Sabotajcı minimap masasındaki checkpoint marker'ına + skil
+/// butonuna tıklayınca `SaboteurInteraction` bunu çağırıyor (eski F-tuşlu
+/// `SaboteurSkillInput` test scripti silindi).
 ///
 /// Buz bombasının patlama fiziği (IceBomb.cs içindeki rb.AddForce) her
 /// arabanın SAHİBİ olan client'ta doğru çalışması gerektiği için (bkz.
