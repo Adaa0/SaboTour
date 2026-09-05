@@ -79,5 +79,49 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 78e65f66f72b36c45995cadb3714c677, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6854622887857371039}
   m_SourcePrefab: {fileID: 100100000, guid: 78e65f66f72b36c45995cadb3714c677, type: 3}
+--- !u!23 &2591278487575538454 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -4587302668392987624, guid: 78e65f66f72b36c45995cadb3714c677, type: 3}
+  m_PrefabInstance: {fileID: 7178934108367695630}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1 &8025937185565577823 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: 78e65f66f72b36c45995cadb3714c677, type: 3}
+  m_PrefabInstance: {fileID: 7178934108367695630}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &6854622887857371039
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8025937185565577823}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98ec7c6ca07b4054a82debb2ae0a3506, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::IceBomb
+  delay: 1
+  icePatchPrefab: {fileID: 8092128558806959148, guid: 2e11e06190e6c1a43b575f259f318a93, type: 3}
+  flashTargetRenderer: {fileID: 2591278487575538454}
+  normalMat: {fileID: 2100000, guid: 1ec3428faa719074ab5c7111712fd211, type: 2}
+  flashMat: {fileID: 2100000, guid: d63a420a5ed8e2e48bc798fd20ecdd2d, type: 2}
+  flashSpeed: 0.15
+  explosionRadius: 300
+  explosionForce: 45000
+  upwardBias: 0.5
+  propIgnoreMinSeconds: 1.5
+  propIgnoreMaxSeconds: 8
+  icePatchLifetime: 12
+  launchClip: {fileID: 0}
+  impactClip: {fileID: 0}
+  beepClip: {fileID: 0}
+  explosionClip: {fileID: 0}
+  sfxVolume: 1
+  shakeRadius: 300
+  shakeStrength: 1

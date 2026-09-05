@@ -17,6 +17,11 @@ public class ChickenFlockManager : MonoBehaviour
     [SerializeField] private int numberOfWaves = 3;
     [SerializeField] private float delayBetweenWaves = 0.5f;
 
+    [Header("Ses")]
+    [Tooltip("Sürü ilk doğduğu anda spawn noktasında çalan toplu gıdaklama/kanat çırpma sesi. Yarışçıya 'bir şeyler geliyor' uyarısı veriyor. Tek tek tavukların gıdaklaması AYRI (Chicken.cs).")]
+    [SerializeField] private AudioClip flockSpawnClip;
+    [Range(0f, 1f)][SerializeField] private float flockSpawnVolume = 0.9f;
+
     [Header("Debug")]
     [SerializeField] private bool showDebugGizmos = true;
 
@@ -145,6 +150,12 @@ public class ChickenFlockManager : MonoBehaviour
         List<Vector3> usedPositions = new List<Vector3>();
         int spawnedTotal = 0;
 
+        // Sürünün TOPLU sesi sadece BİR KERE, ilk dalgadan hemen önce çalıyor
+        // (her dalgada tekrar çalsaydı üst üste binip gürültü olurdu).
+        // Menzil normalden geniş tutuldu: bu bir uyarı sesi, yarışçı sürüyü
+        // görmeden önce duyabilmeli.
+        SfxPlayer.PlayAt(flockSpawnClip, centerPoint, flockSpawnVolume, 0.05f, 15f, 200f);
+
         for (int wave = 0; wave < numberOfWaves; wave++)
         {
             int chickensThisWave = Mathf.Min(chickensPerWave, totalChickens - spawnedTotal);
@@ -200,6 +211,90 @@ public class ChickenFlockManager : MonoBehaviour
     {
         for (int i = 0; i < spawnPoints.Count; i++)
             SpawnChickenFlockAtCheckpoint(i);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // GEÇİCİ ÇEKİM ARAÇLARI — Steam görselleri bitince SİLİNECEK.
+    // (bkz. CLAUDE.md silme listesi)
+    //
+    // Normalde tavuk sürüsü sabotajcının skilini kullanmasıyla çağrılıyor.
+    // Fotoğraf sahnesinde ne sabotajcı ne de lobi var, o yüzden aşağıdaki
+    // menü komutlarıyla elle tetikliyoruz.
+    //
+    // NASIL KULLANILIR: Play modundayken ChickenFlockManager component'inin
+    // sağ üstündeki üç noktaya (⋮) tıkla, açılan menüden seç.
+    // ─────────────────────────────────────────────────────────────────────
+
+    [Header("Fotoğraf Modu (GEÇİCİ — çekim bitince silinecek)")]
+    [Tooltip("Aşağıdaki 'Tavuk Sürüsü Çağır' komutunun hangi checkpoint'e " +
+             "sürü göndereceği. Kadrajındaki checkpoint hangisiyse onu yaz.")]
+    [SerializeField] private int photoCheckpointIndex = 0;
+
+    [ContextMenu("Fotoğraf: Tavuk Sürüsü Çağır")]
+    private void PhotoSpawnFlock()
+    {
+        SpawnChickenFlockAtCheckpoint(photoCheckpointIndex);
+    }
+
+    /// <summary>
+    /// Sahnedeki tüm tavukları olduğu yerde dondurur.
+    ///
+    /// F7 (FreezeFrame) yerine bunu kullanmanın avantajı: F7 tüm oyunu
+    /// durduruyor, yani arabanın DUMANI ve LASTİK İZİ de donuyor. Bu komut
+    /// sadece tavukların Update()'ini kapatıyor — tavuklar koşar pozisyonda
+    /// kalıyor, araba ve efektleri canlı devam ediyor.
+    /// </summary>
+    [ContextMenu("Fotoğraf: Tavukları Dondur")]
+    private void PhotoFreezeChickens()
+    {
+        Chicken[] chickens = FindObjectsByType<Chicken>(FindObjectsSortMode.None);
+
+        foreach (Chicken chicken in chickens)
+        {
+            chicken.enabled = false;
+
+            // ÖNEMLİ: Tavuklar Rigidbody ile hareket ediyor (Chicken.cs'te
+            // rb.linearVelocity atanıyor). Sadece scripti kapatmak yetmez —
+            // Rigidbody son hızını koruyup kaymaya devam eder. Hızı sıfırlayıp
+            // isKinematic yapıyoruz ki ne momentum ne yerçekimi onu oynatsın,
+            // arabaya çarpsa bile yerinden kıpırdamasın.
+            Rigidbody rb = chicken.GetComponent<Rigidbody>();
+            if (rb == null) continue;
+
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+        }
+
+        Debug.Log($"[ChickenFlockManager] {chickens.Length} tavuk donduruldu (momentum sıfırlandı).");
+    }
+
+    [ContextMenu("Fotoğraf: Tavukları Çöz")]
+    private void PhotoUnfreezeChickens()
+    {
+        foreach (Chicken chicken in FindObjectsByType<Chicken>(FindObjectsSortMode.None))
+        {
+            Rigidbody rb = chicken.GetComponent<Rigidbody>();
+            if (rb != null) rb.isKinematic = false;
+
+            chicken.enabled = true;
+        }
+    }
+
+    [ContextMenu("Fotoğraf: Tavukları Temizle")]
+    private void PhotoClearChickens()
+    {
+        Chicken[] chickens = FindObjectsByType<Chicken>(FindObjectsSortMode.None);
+
+        foreach (Chicken chicken in chickens)
+        {
+            if (chicken == null) continue;
+
+            if (Application.isPlaying) Destroy(chicken.gameObject);
+            else DestroyImmediate(chicken.gameObject);
+        }
+
+        Debug.Log($"[ChickenFlockManager] {chickens.Length} tavuk silindi.");
     }
 
     [ContextMenu("Regenerate Spawn Points")]

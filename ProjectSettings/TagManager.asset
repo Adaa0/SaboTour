@@ -6,6 +6,8 @@ TagManager:
   tags:
   - Checkpoint
   - Ice
+  - Curb
+  - Grass
   layers:
   - Default
   - TransparentFX
@@ -15,12 +17,12 @@ TagManager:
   - UI
   - Drivable
   - Ground
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
+  - Podium
+  - Prop
+  - CarLaunched
+  - PropSmall
+  - PropFar
+  - PropTree
   - 
   - 
   - 
