@@ -76,3 +76,6 @@ crashlytics-build.properties
 
 # Ekran goruntuleri (Steam icin cekilenler) - repoya girmesin
 /[Ss]creenshots/
+
+# Claude Code proje hafizasi - repoya/GitHub'a girmemeli, sadece yerelde kalmali
+/CLAUDE.md
