@@ -63,19 +63,11 @@ public class CarSpawner : MonoBehaviour
             car.AddComponent<Rigidbody>();
         }
 
-        if (autoInitializePlayer)
-        {
-            var playerController = car.GetComponent<PlayerRaceController>();
-            if (playerController != null)
-            {
-                playerController.Initialize(trackGenerator.checkpointsPerLap);
-            }
-            else
-            {
-                Debug.LogWarning("PlayerRaceController not found on car prefab!");
-            }
-        }
-        
+        // NOT: PlayerRaceController artık NetworkBehaviour — checkpoint sayısı
+        // ve yarış durumu server tarafından OnStartServer()'da otomatik
+        // ayarlanıyor (bkz. PlayerRaceControl.cs). Bu yüzden burada manuel
+        // Initialize() çağrısına gerek kalmadı.
+
         Debug.Log($"Car spawned at start line (checkpoint 0): {spawnPosition}");
     }
 

@@ -1,0 +1,19 @@
+"DepotBuildConfig"
+{
+	"DepotID"		"5071181"
+	"contentroot"	"..\SteamBuildOutput\"
+
+	"FileMapping"
+	{
+		"LocalPath"		"*"
+		"DepotPath"		"."
+		"recursive"		"1"
+	}
+
+	"FileExclusion"	"*.pdb"
+	// steam_appid.txt SADECE yerel test için (exe'ye çift tıklayınca Steam
+	// API'nin hangi uygulama olduğunu bilmesi gerekiyor). Steam üzerinden
+	// açılan gerçek build'de GEREKMİYOR, hatta yanlış ID içerirse çakışma
+	// yaratır — bu yüzden yüklemeye dahil edilmiyor.
+	"FileExclusion"	"steam_appid.txt"
+}

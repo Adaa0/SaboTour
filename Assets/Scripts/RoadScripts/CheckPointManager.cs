@@ -10,15 +10,13 @@ public class CheckpointManager : MonoBehaviour
     void Start()
     {
         LoadCheckpoints();
+        
+        TrackGenerator trackGenerator = FindAnyObjectByType<TrackGenerator>();
+        if (trackGenerator != null)
+            trackGenerator.onTrackGenerated.AddListener(LoadCheckpoints);
 
         if (checkpoints.Count == 0)
-        {
-            TrackGenerator trackGenerator = FindAnyObjectByType<TrackGenerator>();
-            if (trackGenerator != null)
-                trackGenerator.onTrackGenerated.AddListener(LoadCheckpoints);
-
             StartCoroutine(RetryUntilLoaded());
-        }
     }
 
     private IEnumerator RetryUntilLoaded()

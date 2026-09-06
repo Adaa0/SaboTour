@@ -58,6 +58,15 @@ MonoBehaviour:
   carTag: Player
   destroyDelay: 0
   visualModel: {fileID: 551696976088912671}
+  cluckClips:
+  - {fileID: 8300000, guid: 8edf103e50dc6af4d9b8948e4828113e, type: 3}
+  - {fileID: 8300000, guid: ac4ede0efba7be84babc4ba87546dd9d, type: 3}
+  - {fileID: 8300000, guid: 77d0f2fbb9d74fa4f911125614e9ef33, type: 3}
+  minCluckInterval: 2.5
+  maxCluckInterval: 7
+  cluckVolume: 0.35
+  hitByCarClip: {fileID: 8300000, guid: 0f908e8d6df77a74688f936da144564b, type: 3}
+  hitVolume: 1
   showDebugGizmos: 0
   showDebugLogs: 0
 --- !u!54 &2180709654307841454

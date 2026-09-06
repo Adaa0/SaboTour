@@ -1,0 +1,15 @@
+"appbuild"
+{
+	"appid"		"5071180"
+	"desc"		"Playtest güncel sürüm"
+	"buildoutput"	"..\SteamBuildLogs\"
+	"contentroot"	"..\SteamBuildOutput\"
+	"setlive"	""
+	"preview"	"0"
+	"local"		""
+
+	"depots"
+	{
+		"5071181"		"depot_build_5071181.vdf"
+	}
+}
