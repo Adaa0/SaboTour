@@ -408,7 +408,9 @@ public class PlayerRaceController : NetworkBehaviour
         bool isLapWrap = newValue == 0 && oldValue > 0;
         if (isLapWrap) return;
 
-        SfxPlayer.PlayUI(checkpointClip, checkpointVolume);
+        // Küçük perde sıçraması: bir yarışta 30+ kez çalıyor, birebir aynı
+        // tonda tekrar edince robotik duyuluyor.
+        SfxPlayer.PlayUI(checkpointClip, checkpointVolume, 0.06f);
     }
     private void OnCurrentLapChanged(int oldValue, int newValue) => UpdateLapUI();
     private void OnTotalTimeChanged(float oldValue, float newValue) => UpdateTimerUI();

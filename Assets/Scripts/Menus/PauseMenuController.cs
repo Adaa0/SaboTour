@@ -81,7 +81,7 @@ public class PauseMenuController : MonoBehaviour
     public Button howToPlayGeriButton;
 
     [Header("Geçiş Animasyonu")]
-    [Tooltip("Paneller arası geçişte ekranı süpüren Persona animasyonu. Kapatırsan geçişler anlık olur.")]
+    [Tooltip("Paneller arası geçişte ekranı süpüren geçiş animasyonu. Kapatırsan geçişler anlık olur.")]
     public bool useSweepTransitions = true;
 
     // Ana butonlar yerine bir ALT PANEL (ayarlar / geri bildirim / nasıl
@@ -317,7 +317,7 @@ public class PauseMenuController : MonoBehaviour
     {
         if (change == null) return;
 
-        if (useSweepTransitions) PersonaPageSweep.Sweep(change);
+        if (useSweepTransitions) MenuPageSweep.Sweep(change);
         else change();
     }
 

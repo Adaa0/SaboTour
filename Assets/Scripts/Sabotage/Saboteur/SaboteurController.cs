@@ -57,11 +57,21 @@ public class SaboteurController : NetworkBehaviour
     // olduğu için ayak sesinin diğer oyunculara gitmesi GEREKMİYOR — network
     // mesajı harcamamak bilinçli bir karar.
     [Header("Sesler")]
-    [Tooltip("Yürürken çalan ayak sesleri. Birden fazla ekle — tek klip tekrarlanınca yürüyüş çok yapay duyuluyor. Kulenin zemini ahşap/metal olduğu için o yüzeye uygun sesler seç.")]
+    [Tooltip("Yürürken çalan ayak sesi/sesleri. TEK klip yeterli — her adımda perde ve " +
+             "ses seviyesi rastgele değişiyor (aşağıdaki jitter alanları), böylece tekdüze " +
+             "duyulmuyor ve loop gibi hissettirmiyor. Birden fazla koyarsan aralarından " +
+             "rastgele seçilir. Kule zemini ahşap/metal olduğu için o yüzeye uygun seç.")]
     [SerializeField] private AudioClip[] footstepClips;
     [Tooltip("Kaç metrede bir adım sesi çalsın. Küçültürsen adımlar sıklaşır. Karakterin gerçek adım uzunluğuna yakın bir değer doğal duyulur.")]
     [SerializeField] private float stepDistance = 2.2f;
     [Range(0f, 1f)][SerializeField] private float footstepVolume = 0.4f;
+    [Tooltip("Her adımda perde ±bu kadar rastgele kayar (0.2 = ±%20). TEK klipten " +
+             "canlı bir yürüyüş çıkaran asıl ayar bu — düşük verirsen adımlar birbirinin " +
+             "aynısı olur.")]
+    [Range(0f, 0.4f)][SerializeField] private float footstepPitchJitter = 0.22f;
+    [Tooltip("Her adımda ses seviyesi bu oranda rastgele düşebilir (0.2 = en fazla %20 kısık). " +
+             "Perde sıçramasıyla birlikte adımların 'kopyala-yapıştır' duyulmasını engelliyor.")]
+    [Range(0f, 0.5f)][SerializeField] private float footstepVolumeJitter = 0.2f;
     [Tooltip("Zıplama anında çalar.")]
     [SerializeField] private AudioClip jumpClip;
     [Tooltip("Zıplamadan/düşüşten sonra yere değince çalar.")]
@@ -415,7 +425,11 @@ public class SaboteurController : NetworkBehaviour
         if (stepAccumulator < stepDistance) return;
 
         stepAccumulator = 0f;
-        SfxPlayer.PlayRandomAt(footstepClips, transform.position, footstepVolume, 0.12f, 3f, 30f);
+
+        // Her adım: klip volume'undan rastgele biraz düş + perdeyi jitter'la.
+        // TEK klipten bile "yürüyor" hissi bu iki rastgeleliğin toplamı.
+        float stepVol = footstepVolume * (1f - Random.Range(0f, footstepVolumeJitter));
+        SfxPlayer.PlayRandomAt(footstepClips, transform.position, stepVol, footstepPitchJitter, 3f, 30f);
     }
 
     /// <summary>

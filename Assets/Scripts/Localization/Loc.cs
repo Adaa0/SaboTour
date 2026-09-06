@@ -39,6 +39,7 @@ public static class Loc
         ["menu.feedback"]       = new[] { "Geri Bildirim", "Feedback" },
         ["menu.ready"]          = new[] { "Hazırım", "Ready" },
         ["menu.notready"]       = new[] { "Hazır Değilim", "Not Ready" },
+        ["menu.leavelobby"]     = new[] { "Lobiden Ayrıl", "Leave Lobby" },
         ["menu.namehint"]       = new[] { "İsmini yaz...", "Enter your name..." },
         ["menu.loading"]        = new[] { "Yükleniyor...", "Loading..." },
         ["menu.loadingplayers"] = new[] { "Oyuncular yükleniyor...", "Waiting for players..." },

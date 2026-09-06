@@ -10,7 +10,7 @@ using UnityEngine.UI;
 // dikdörtgen. Menüde butonlar birbirinden uzak olduğu için sorun değil.
 // ⚠️ TextMeshPro'da ÇALIŞMAZ (TMP kendi mesh'ini üretip mesh efektlerini yok
 // sayıyor). Yazının eğikliği TMP'nin kendi Italic ayarıyla veriliyor.
-[AddComponentMenu("UI/Effects/Persona Shear")]
+[AddComponentMenu("UI/Effects/Menu Shear")]
 public class UIShear : BaseMeshEffect
 {
     [Tooltip("Yatay eğme miktarı (piksel). Üst kenar sağa, alt kenar sola kayar. 0 = düz dikdörtgen.")]

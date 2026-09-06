@@ -8,9 +8,9 @@ using UnityEngine.UI;
 // 🚨 Bu obje NetworkManager'ın ALTINDA DEĞİL, kendi bağımsız objesinde duruyor:
 // Mirror sahne geçişinde NetworkManager objesini DontDestroyOnLoad'dan çıkarıp
 // yok ediyor (20 Ağustos SteamManager dersi), oraya bağlansaydı ölürdü.
-public class PersonaScreenFlash : MonoBehaviour
+public class MenuScreenFlash : MonoBehaviour
 {
-    static PersonaScreenFlash instance;
+    static MenuScreenFlash instance;
 
     Image image;
     int framesLeft;
@@ -34,7 +34,7 @@ public class PersonaScreenFlash : MonoBehaviour
     {
         if (instance != null) return;
 
-        var go = new GameObject("PersonaScreenFlash", typeof(Canvas), typeof(CanvasScaler));
+        var go = new GameObject("MenuScreenFlash", typeof(Canvas), typeof(CanvasScaler));
         DontDestroyOnLoad(go);
 
         var canvas = go.GetComponent<Canvas>();
@@ -58,7 +58,7 @@ public class PersonaScreenFlash : MonoBehaviour
         img.raycastTarget = false;   // 🚨 ŞART: açık kalsa TÜM menü tıklanamaz olurdu
         img.enabled = false;
 
-        instance = go.AddComponent<PersonaScreenFlash>();
+        instance = go.AddComponent<MenuScreenFlash>();
         instance.image = img;
     }
 

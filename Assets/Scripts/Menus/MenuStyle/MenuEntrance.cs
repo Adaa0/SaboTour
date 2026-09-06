@@ -7,7 +7,7 @@ using UnityEngine;
 // 🚨 HEPSİNE AYNI DELAY VERİLİRSE ETKİ TAMAMEN KAYBOLUR. Kademeli gecikme
 // (0.00 / 0.06 / 0.12 ...) işin tamamı.
 [RequireComponent(typeof(RectTransform))]
-public class PersonaEntrance : MonoBehaviour
+public class MenuEntrance : MonoBehaviour
 {
     [Tooltip("Bu öğe kaç saniye sonra girmeye başlasın. Sırayla artır: 0.00 / 0.06 / 0.12 ...")]
     public float delay = 0f;

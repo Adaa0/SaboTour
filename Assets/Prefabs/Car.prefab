@@ -5716,24 +5716,25 @@ MonoBehaviour:
   medRpm: 0.54
   rpmCurve: 1.2
   engineMinPitch: 0.7
-  engineMaxPitch: 1.55
-  idleVolume: 0.06
-  maxVolume: 0.28
+  engineMaxPitch: 1.5
+  idleVolume: 0.04
+  maxVolume: 0.1
   volumeRamp: 2
   speedForMaxPitch: 215
   pitchSmoothing: 3.5
   idleReleaseSpeedKmh: 6
-  useGearShifts: 0
+  useGearShifts: 1
   gearMinPitch: 0.82
   gearMaxPitch: 1.35
   gearBlend: 0.15
   gearHysteresis: 0.3
   gearShiftCooldown: 0.4
-  skidLoop: {fileID: 8300000, guid: bff5a4dd96319e140b17df7bce2a5bc5, type: 3}
-  skidVolume: 0
+  skidLoop: {fileID: 8300000, guid: 866beb1de45b94b449452fe6b77bdcaf, type: 3}
+  skidVolume: 0.2
   skidFadeSpeed: 8
   crashClips:
-  - {fileID: 8300000, guid: 09ccdca460882564299ecaf42905ab72, type: 3}
+  - {fileID: 8300000, guid: 445be74f59c047c44b27a581745946ad, type: 3}
+  propHitClips: []
   minCrashSpeed: 6
   loudCrashSpeed: 22
   crashVolume: 0.9

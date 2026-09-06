@@ -3,17 +3,16 @@ using UnityEngine;
 public class InteractableFeedback : MonoBehaviour
 {
     [Header("Basma Animasyonu (tıklayınca)")]
-    [Tooltip("1 = değişmez, 0.85 = tıklayınca %15 küçülür (içe çökme hissi).")]
-    [SerializeField] private float pressScale = 0.85f;
+    [SerializeField] private float pressScale = 0.85f; //ne kadar küçüleceğine karar verir
     [SerializeField] private float pressDuration = 0.1f;
 
-    private Vector3 baseScale;
-    private Coroutine pressRoutine;
-    private float heldAmount;
+    private Vector3 baseScale; //orjinal boyutu
+    private Coroutine pressRoutine; //şuan oynayan animasyonu takip eder
+    private float heldAmount; //ne kadar basılı tutulduğunu gösterir
 
-    private Vector3 RestScale => Vector3.Lerp(baseScale, baseScale * pressScale, heldAmount);
+    private Vector3 RestScale => Vector3.Lerp(baseScale, baseScale * pressScale, heldAmount); //restscale'i heldAmounta göre hesaplar
 
-    void Awake()
+    void Awake() //kod uyandığında baseScaleyi normal scale olarak alır 
     {
         baseScale = transform.localScale;
     }

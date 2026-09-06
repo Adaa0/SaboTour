@@ -309,6 +309,73 @@ public class CarController : NetworkBehaviour
     [Header("Görsel Efektler")]
     [SerializeField] private float tireRotSpeed = 3000f;
     [SerializeField] private float maxSteeringAngle = 30f;
+    // ══ DUMAN / LASTİK İZİ EŞİĞİ ═════════════════════════════════════════
+    //
+    // 🚨 2 EYLÜL 2026'DA AÇI TABANLI OLDU. Eskiden karar SADECE yanal HIZA
+    // (m/s, minSideSkidVelocity) bakıyordu ve bu eşik HIZLA BİRLİKTE
+    // BOZULUYORDU: sabit bir m/s değeri, araç hızlandıkça gitgide daha KÜÇÜK
+    // bir kayma açısına denk geliyor. Prefabdaki 15 m/s ile ölçülen gerçek
+    // açılar:
+    //     220 km/h → 13.8°   150 km/h → 19.8°
+    //     100 km/h → 28.4°    50 km/h → 47.2°
+    // Yani yarış hızında araç "azıcık yan dursa" duman çıkıyor, düşük hızda
+    // ise gerçekten savrulsa bile çıkmıyordu. "Az yatsa bile duman çıkıyor"
+    // şikâyetinin sebebi tam olarak buydu — eşik yanlış değil, YANLIŞ BİRİMDE.
+    //
+    // KAYMA AÇISI = atan(yanal hız / ileri hız). Hızdan BAĞIMSIZ, yani
+    // 50 km/h'te de 220 km/h'te de aynı "yatıklıkta" duman çıkıyor.
+    //
+    // Varsayılan 18°'nin her hızda gerektirdiği yanal hız:
+    //      50 km/h → 4.5 m/s    100 km/h →  9.0 m/s
+    //     150 km/h → 13.5 m/s   220 km/h → 19.9 m/s
+    // Yarış hızı ~209 km/h olduğu için (RacePodiumManager'daki ölçüm) asıl
+    // fark orada hissediliyor: eskiden 15 m/s (≈14.5°) yetiyordu, artık
+    // ~19 m/s gerekiyor. Düşük hızda ise TERSİ — eşik gevşedi, çünkü orada
+    // eski sistem gerçek savrulmaları bile görmüyordu.
+
+    [Tooltip("Duman/lastik izinin çıkması için aracın kaç DERECE yan kayması " +
+             "gerektiği. Aracın GİTTİĞİ yön ile BURNUNUN baktığı yön arasındaki " +
+             "açı. ASIL AYAR BU — büyüt = daha az duman.\n\n" +
+             "~14° = eski davranışın yarış hızındaki (209 km/h) karşılığı\n" +
+             "18° = varsayılan — yarış hızında belirgin şekilde daha sıkı\n" +
+             "22-25° = sadece gerçek, savurmalı driftlerde duman\n\n" +
+             "⚠️ AÇI EŞİĞİ HIZDAN BAĞIMSIZ olduğu için DÜŞÜK hızlarda eskisine " +
+             "göre daha ERKEN duman çıkar (eskiden 100 km/h'te 28°, 50 km/h'te " +
+             "47° gerekiyordu — yani yavaş virajda araç gerçekten savrulsa bile " +
+             "duman yoktu). Tutarlılık kasıtlı; her yerde daha az duman " +
+             "istiyorsan bu sayıyı yükselt.\n\n" +
+             "DUMAN + LASTİK İZİ + CIZIRTI SESİ ÜÇÜ BİRDEN buna bağlı — " +
+             "CarAudio kendi kararını vermiyor, CarController.IsSkidding'i okuyor.")]
+    [Range(2f, 45f)][SerializeField] private float minSkidSlipAngle = 18f;
+
+    [Tooltip("Bu hızın (km/h) ALTINDA hiç duman/iz çıkmaz.\n\n" +
+             "NEDEN GEREKLİ: kayma açısı çok düşük hızlarda anlamsızlaşıyor — " +
+             "araç neredeyse dururken milimetrik bir yana kayma bile 90° " +
+             "hesaplanır ve park hâlindeki araç duman tüttürürdü. Açı " +
+             "hesabının doğal kör noktası bu, o yüzden bir hız tabanı şart.")]
+    [SerializeField] private float minSkidSpeedKmh = 25f;
+
+    [Tooltip("EL FRENİ DRİFTİ için ayrı eşik. Drift 0'dan 1'e rampalanıyor; " +
+             "efekt kararı bu değerin üstünde veriliyor.\n\n" +
+             "🚨 Bu, fizikteki `isDrifting` eşiği (0.05) DEĞİL — oraya " +
+             "dokunmak tutuş/direksiyon hissini değiştirirdi. Bu alan SADECE " +
+             "görsel/işitsel eşiği kaydırıyor.\n\n" +
+             "0.05 = el frenine dokunur dokunmaz duman (eski davranış)\n" +
+             "0.35 = drift gerçekten oturunca duman (varsayılan)")]
+    [Range(0.05f, 1f)][SerializeField] private float driftFactorForSkid = 0.35f;
+
+    [Tooltip("BUZDA açı eşiği bu katsayıyla çarpılır — buz zaten kaygan, " +
+             "orada daha erken duman çıkması isteniyor. 0.35 × 18° ≈ 6°.")]
+    [Range(0.1f, 1f)][SerializeField] private float iceSkidAngleFactor = 0.35f;
+
+    [Tooltip("AÇI YERİNE ESKİ DAVRANIŞ: kapatırsan karar tekrar aşağıdaki " +
+             "yanal hız eşiğine (m/s) döner. Yeni sistem beğenilmezse kod " +
+             "değişikliği gerekmeden geri dönüş yolu.")]
+    [SerializeField] private bool useSlipAngleForSkid = true;
+
+    [Tooltip("ESKİ SİSTEM (Use Slip Angle For Skid KAPALIYKEN kullanılır): " +
+             "duman için gereken yanal hız (m/s). Açı tabanlı sisteme " +
+             "geçildiği için normalde okunmuyor.")]
     [SerializeField] private float minSideSkidVelocity = 8f;
 
     #endregion
@@ -837,12 +904,20 @@ public class CarController : NetworkBehaviour
         // shouldShowEffects kararı burada (owner'ın FixedUpdate'inde) hesaplanıp
         // latch'leniyor — Vfx() artık bunu yeniden hesaplamıyor, doğrudan bu
         // (senkronize edilmiş) sonucu kullanıyor.
-        float skidThreshold = isCarOnIce ? 2f : minSideSkidVelocity;
-        bool rawShouldShowEffects = isGrounded &&
-                                    (Mathf.Abs(currentCarLocalVelocity.x) > skidThreshold ||
-                                    (isDrifting && currentSpeed > 5f) ||
-                                    (isCarOnIce && Mathf.Abs(steerInput) > 0.5f)) &&
-                                    carVelocityRatio > 0;
+        // ÜÇ SEBEPTEN BİRİ duman/iz çıkarıyor:
+        //  1. Araç yeterince YAN KAYIYOR (açı eşiği — asıl ayar).
+        //  2. El freni drifti yeterince OTURMUŞ (driftFactorForSkid).
+        //  3. Buzda direksiyon sertçe kırılmış.
+        //
+        // 2. madde eskiden `isDrifting && currentSpeed > 5f` idi: `isDrifting`
+        // drift oranı 0.05'i geçer geçmez true oluyor, yani el frenine hafifçe
+        // dokunmak 5 km/h üstünde duman çıkarmaya yetiyordu. Fizikteki o eşiğe
+        // DOKUNULMADI (tutuş/direksiyon hissini değiştirirdi), efekt kararı
+        // kendi eşiğine alındı.
+        bool rawShouldShowEffects = isGrounded && carVelocityRatio > 0 &&
+                                    (IsSideSlipping() ||
+                                     (currentDriftFactor > driftFactorForSkid && currentSpeed > minSkidSpeedKmh) ||
+                                     (isCarOnIce && Mathf.Abs(steerInput) > 0.5f));
 
         skidEffectLatchTimer = rawShouldShowEffects
             ? skidEffectMinVisibleDuration
@@ -850,6 +925,39 @@ public class CarController : NetworkBehaviour
 
         shouldShowEffects = skidEffectLatchTimer > 0f;
         netShouldShowEffects = shouldShowEffects;
+    }
+
+    /// <summary>
+    /// Araç duman çıkaracak kadar YAN KAYIYOR mu?
+    ///
+    /// Kayma açısı (slip angle) = aracın GİTTİĞİ yön ile BAKTIĞI yön
+    /// arasındaki açı: atan(yanal hız / ileri hız). Yanal hızın kendisine
+    /// bakmak yerine açıya bakmanın sebebi: sabit bir m/s eşiği, hız arttıkça
+    /// gitgide daha küçük bir açıya denk geliyor (bkz. alan tanımlarındaki
+    /// tablo) — yarış hızında araç neredeyse düz giderken duman çıkıyordu.
+    ///
+    /// `Mathf.Max(0.01f, ...)`: ileri hız sıfıra yaklaşırken açı 90°'ye
+    /// fırlıyor; hız tabanı (minSkidSpeedKmh) bunu zaten eliyor ama bölme
+    /// için yine de bir zemin gerekiyor.
+    /// </summary>
+    private bool IsSideSlipping()
+    {
+        float lateral = Mathf.Abs(currentCarLocalVelocity.x);
+
+        if (!useSlipAngleForSkid)
+        {
+            // ESKİ DAVRANIŞ (geri dönüş anahtarı açıkken).
+            float legacyThreshold = isCarOnIce ? 2f : minSideSkidVelocity;
+            return lateral > legacyThreshold;
+        }
+
+        if (currentSpeed < minSkidSpeedKmh) return false;
+
+        float forward = Mathf.Max(0.01f, Mathf.Abs(currentCarLocalVelocity.z));
+        float slipAngle = Mathf.Atan2(lateral, forward) * Mathf.Rad2Deg;
+
+        float threshold = isCarOnIce ? minSkidSlipAngle * iceSkidAngleFactor : minSkidSlipAngle;
+        return slipAngle > threshold;
     }
 
     private void Update()

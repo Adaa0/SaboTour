@@ -4,20 +4,20 @@ using TMPro;
 
 // İsim yazma kutusunun Persona hali.
 //
-// PersonaButton'ın AYNISI DEĞİL, bilerek: bir yazı kutusu "violent selection"
+// MenuButton'ın AYNISI DEĞİL, bilerek: bir yazı kutusu "violent selection"
 // istemiyor. İçine tıklayıp yazarken zıplayan, çakan, yıldız patlatan bir kutu
 // sinir bozucu olur. Buradaki tepki çok daha sakin — odaklanınca gölge ana
 // renge dönüyor ve buton hafifçe öne çıkıyor. Şekil dili (eğim, paralelkenar,
 // gölge) butonlarla aynı, davranış farklı.
 [DisallowMultipleComponent]
 [RequireComponent(typeof(RectTransform))]
-public class PersonaField : MonoBehaviour
+public class MenuField : MonoBehaviour
 {
-    // PersonaButton ile AYNI isimler — kaldırma aracı ikisini de aynı şekilde
+    // MenuButton ile AYNI isimler — kaldırma aracı ikisini de aynı şekilde
     // bulup söküyor.
-    public const string RootName = "PersonaSlabRoot";
-    public const string ShadowName = "PersonaShadow";
-    public const string SlabName = "PersonaSlab";
+    public const string RootName = "SlabRoot";
+    public const string ShadowName = "SlabShadow";
+    public const string SlabName = "Slab";
 
     [Header("Renkler")]
     public Color fill = new Color32(0xEC, 0xEC, 0xEC, 0xFF);

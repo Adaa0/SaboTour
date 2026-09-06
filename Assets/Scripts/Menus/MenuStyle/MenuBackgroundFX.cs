@@ -11,7 +11,7 @@ using UnityEngine.UI;
 // Yani efekti sadece PLAY MODE'da görürsün, Scene view'da görünmez.
 // Renk/hız/sayı ayarları Play sırasında Inspector'dan canlı denenebilir.
 [DisallowMultipleComponent]
-public class PersonaBackgroundFX : MonoBehaviour
+public class MenuBackgroundFX : MonoBehaviour
 {
     [Header("Zemin")]
     [Tooltip("Kapatırsan arkadaki 3B sahne (kule/ağaçlar) görünür kalır.")]

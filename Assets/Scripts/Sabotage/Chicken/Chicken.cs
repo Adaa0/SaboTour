@@ -155,7 +155,10 @@ public class Chicken : MonoBehaviour
     {
         if (Time.time < nextCluckTime) return;
 
-        SfxPlayer.PlayRandomAt(cluckClips, transform.position, cluckVolume, 0.12f, 5f, 60f);
+        // maxDistance GENİŞ (140): 12-15 tavuğun gıdaklaması yarışçıya sürüyü
+        // GÖRMEDEN önce ulaşmalı — "skill kullanıldı, bir şey geliyor" uyarısı
+        // asıl bu sürekli sesten geliyor (ayrı bir flock loop'u opsiyonel).
+        SfxPlayer.PlayRandomAt(cluckClips, transform.position, cluckVolume, 0.12f, 8f, 140f);
         ScheduleNextCluck();
     }
 

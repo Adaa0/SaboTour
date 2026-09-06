@@ -2,29 +2,25 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
-// Videodaki sayfa geçişi: eğik bir dikdörtgen ekranı süpürüyor, arkasından
-// saniyenin onda biri geriden SİYAH bir tanesi kovalıyor; ekran kapalıyken
-// sayfa değiştiriliyor.
+// Sayfa geçişi: eğik bir dikdörtgen ekranı süpürüyor, arkasından saniyenin
+// onda biri geriden SİYAH bir tanesi kovalıyor; ekran kapalıyken sayfa
+// değiştiriliyor.
 //
 // KULLANIMI (tek satır):
-//     PersonaPageSweep.Sweep(() => { /* burada paneli değiştir */ });
+//     MenuPageSweep.Sweep(() => { /* burada paneli değiştir */ });
 //
 // Ekran tam kapandığı anda geri çağrı (callback) tetikleniyor — yani panel
 // değişimini kimse görmüyor.
-//
-// ⚠️ Bu dosya hazır duruyor ama menüdeki panel geçişlerine BAĞLANMADI.
-// Bağlamak PauseMenuController/MainMenuButtons'ın ÇALIŞAN akışına dokunmak
-// demek; onu sen isteyince, gözünle görüp karar verdikten sonra yaparız.
-public class PersonaPageSweep : MonoBehaviour
+public class MenuPageSweep : MonoBehaviour
 {
     // Süpürme renkleri STATIC: geçişler hem ana menüden hem yarışın
     // ortasındaki ESC menüsünden tetikleniyor, yani rengi tutan bir sahne
-    // objesine bağlanamaz (LobbyCanvas yarışta yok). PersonaMenuStyle
-    // açılışta buraya kendi paletini yazıyor.
+    // objesine bağlanamaz (LobbyCanvas yarışta yok). MenuStyle açılışta
+    // buraya kendi paletini yazabilir.
     public static Color DefaultLeadColor = new Color32(0xD5, 0x73, 0x0B, 0xFF);
     public static Color DefaultTrailColor = new Color32(0x0E, 0x12, 0x24, 0xFF);
 
-    static PersonaPageSweep instance;
+    static MenuPageSweep instance;
 
     RectTransform lead;
     RectTransform trail;
@@ -65,7 +61,7 @@ public class PersonaPageSweep : MonoBehaviour
     {
         if (instance != null) return;
 
-        var go = new GameObject("PersonaPageSweep", typeof(Canvas), typeof(CanvasScaler));
+        var go = new GameObject("MenuPageSweep", typeof(Canvas), typeof(CanvasScaler));
         DontDestroyOnLoad(go);
 
         var c = go.GetComponent<Canvas>();
@@ -77,7 +73,7 @@ public class PersonaPageSweep : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 0.5f;
 
-        instance = go.AddComponent<PersonaPageSweep>();
+        instance = go.AddComponent<MenuPageSweep>();
         instance.canvas = c;
         instance.lead = MakeBar(go.transform, "Lead");
         instance.trail = MakeBar(go.transform, "Trail");

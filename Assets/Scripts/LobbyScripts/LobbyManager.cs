@@ -108,6 +108,12 @@ public class LobbyManager : MonoBehaviour
         // zaten OnDestroy'da bayrağı bırakıyor ve yukarıdaki kendini onaran
         // property her koşulda yaşayan kopyayı buluyor.
         Instance = this;
+
+        // Canvas'ın SAHNEDEKİ sıra numarasını burada yakalıyoruz — yükleme
+        // ekranı onu geçici olarak yukarı çekiyor ve sonra buraya geri iniyor
+        // (bkz. BringCanvasToFront / RestoreCanvasOrder).
+        Canvas canvas = ResolveOwnCanvas();
+        if (canvas != null) canvasBaseSortingOrder = canvas.sortingOrder;
     }
 
     void Start()
@@ -291,8 +297,23 @@ public class LobbyManager : MonoBehaviour
         background.color = new Color(0f, 0f, 0f, 1f);
     }
 
+    // Yükleme ekranı açıkken lobi canvas'ının çıkarıldığı sıra numarası.
+    // Duraklatma menüsünün (PauseMenu prefabı, 400) ÜSTÜNDE olması bilinçli:
+    // yüklenirken ESC menüsünün yükleme ekranının önüne geçmesi istenmiyor.
+    private const int LoadingSortingOrder = 500;
+
+    private Canvas ownCanvas;
+    private int canvasBaseSortingOrder;
+
+    private Canvas ResolveOwnCanvas()
+    {
+        if (ownCanvas == null) ownCanvas = GetComponentInParent<Canvas>(true);
+        return ownCanvas;
+    }
+
     /// <summary>
-    /// Lobi canvas'ını her şeyin ÜSTÜNE alır.
+    /// Lobi canvas'ını yükleme ekranı boyunca her şeyin ÜSTÜNE alır.
+    /// (Ekran kapanınca RestoreCanvasOrder eski sırasına geri indiriyor.)
     ///
     /// NEDEN: Online Scene'de birden fazla Screen Space Overlay canvas var ve
     /// HEPSİNİN `sortingOrder`'ı 0. Eşit sıra numarasında Unity'nin çizim
@@ -302,10 +323,46 @@ public class LobbyManager : MonoBehaviour
     /// </summary>
     private void BringCanvasToFront()
     {
-        Canvas canvas = GetComponentInParent<Canvas>();
+        Canvas canvas = ResolveOwnCanvas();
         if (canvas == null) return;
 
-        if (canvas.sortingOrder < 500) canvas.sortingOrder = 500;
+        if (canvas.sortingOrder < LoadingSortingOrder)
+            canvas.sortingOrder = LoadingSortingOrder;
+    }
+
+    /// <summary>
+    /// Lobi canvas'ını yükleme ekranından ÖNCEKİ sıra numarasına geri indirir.
+    ///
+    /// ══ BU METOT GERÇEK BİR BUG'I DÜZELTİYOR (2 Eylül 2026) ══
+    /// BELİRTİ: "Tekrar Oyna" ile lobiye dönünce ESC menüsü çalışmıyor ve
+    /// oyuncu lobiden çıkamıyordu.
+    ///
+    /// SEBEP: BringCanvasToFront lobi canvas'ını 500'e çıkarıyordu ve onu GERİ
+    /// İNDİREN HİÇBİR YER YOKTU. Bu canvas NetworkManager'ın ALTINDA, yani
+    /// DontDestroyOnLoad; "Tekrar Oyna" oturumu KAPATMADIĞI için
+    /// (ServerChangeScene) Mirror onu yok etmiyor ve 500 değeri lobiye geri
+    /// dönerken de duruyordu. Duraklatma menüsünün canvas'ı ise 400.
+    /// Sonuç: ESC'ye basınca menü GERÇEKTEN AÇILIYOR ama lobi UI'ının
+    /// ARKASINDA çiziliyor — ne görünüyor ne tıklanabiliyor. Lobide oturumdan
+    /// çıkmanın tek yolu ESC > Oyundan Ayrıl olduğu için oyuncu kilitleniyordu.
+    ///
+    /// NEDEN SADECE "TEKRAR OYNA SONRASI" GÖRÜNÜYORDU: ilk lobide sıra hâlâ
+    /// 0'dı (yükleme ekranı hiç açılmamıştı), yarışın ORTASINDA da sorun yoktu
+    /// çünkü LobbyPanel kapalı — lobi canvas'ında çizilecek/tıklanacak bir şey
+    /// olmuyordu. Fark sadece lobiye GERİ DÖNÜNCE ortaya çıkıyordu.
+    /// </summary>
+    private void RestoreCanvasOrder()
+    {
+        Canvas canvas = ResolveOwnCanvas();
+        if (canvas == null) return;
+
+        // BAYRAĞA BAKMIYORUZ (bilinçli): sırayı yukarı çeken kopya ile burayı
+        // çalıştıran kopya farklı olabilir — bu projede "hangi kopya yaşayacak"
+        // varsayımı üç kez yanlış çıktı. Taban değer Awake'te okunduğu için
+        // hangi kopya çalışırsa çalışsın doğru değere geri iniyor.
+        // Başkası 500'ün de ÜSTÜNE çekmişse (ekran mesajı, süpürme) dokunmuyoruz.
+        if (canvas.sortingOrder == LoadingSortingOrder)
+            canvas.sortingOrder = canvasBaseSortingOrder;
     }
 
     public void HideLoadingScreen()
@@ -315,6 +372,7 @@ public class LobbyManager : MonoBehaviour
         loadingScreenVisible = false;
 
         if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(false);
+        RestoreCanvasOrder();
     }
 
     // Yükleme ekranını "oyuncu hazır olunca" kapatan coroutine.
@@ -398,6 +456,7 @@ public class LobbyManager : MonoBehaviour
 
         loadingScreenVisible = false;
         if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(false);
+        RestoreCanvasOrder();
         hideRoutine = null;
     }
 
@@ -426,7 +485,13 @@ public class LobbyManager : MonoBehaviour
         lastKnownPlayerCount = -1; // katılma sesi yeni oturumda baştan saysın
 
         if (ReadyButtonLabel != null) ReadyButtonLabel.text = Loc.T("menu.ready");
-        if (LoadingScreenPanel != null) LoadingScreenPanel.SetActive(false);
+
+        // ELLE `LoadingScreenPanel.SetActive(false)` DEĞİL, HideLoadingScreen():
+        // o, bekleyen "gizle" coroutine'ini de durduruyor VE canvas sıra
+        // numarasını geri indiriyor (bkz. RestoreCanvasOrder). Elle kapatmak,
+        // canvas'ı 500'de bırakıp ESC menüsünü lobinin arkasına gömüyordu.
+        HideLoadingScreen();
+
         if (LobbyPanel != null) LobbyPanel.SetActive(true);
 
         RefreshPlayerList();

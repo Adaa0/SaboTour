@@ -4,7 +4,7 @@ using UnityEngine;
 //
 // Bu bileşen LobbyCanvas'ta duruyor ve tüm menünün paletini TEK YERDEN
 // tutuyor. Rengi değiştirip sağ tık > "Tüm Butonlara Uygula" dediğinde
-// altındaki bütün PersonaButton'lara yazıyor.
+// altındaki bütün MenuButton'lara yazıyor.
 //
 // ⚠️ Bu SADECE bir editör kolaylığı. Çalışma anında butonlar buraya HİÇ
 // bakmıyor, kendi Inspector'larındaki renkleri kullanıyorlar — yani bir
@@ -15,7 +15,7 @@ using UnityEngine;
 // gereksiz bulunmuştu — bu yüzden bilerek sahnede duran basit bir
 // bileşen olarak yazıldı.)
 [DisallowMultipleComponent]
-public class PersonaMenuStyle : MonoBehaviour
+public class MenuStyle : MonoBehaviour
 {
     [Header("Ana renk — istediğini seç, hepsi buna göre kurulur")]
     public Color accent = new Color32(0xD8, 0x1E, 0x2C, 0xFF);
@@ -58,7 +58,12 @@ public class PersonaMenuStyle : MonoBehaviour
     public Vector2 entranceFrom = new Vector2(-280f, 0f);
     public float entranceDuration = 0.42f;
 
-    // Sayfa süpürme renkleri STATIC bir yerde duruyor (bkz. PersonaPageSweep):
+    [Header("Yüzme hareketi (MenuFloat)")]
+    [Tooltip("Butonlarla başlık AYNI hızda yüzmeli, yoksa yan yana kopuk görünür.")]
+    public float floatSpeed = 0.35f;
+    public float floatAmount = 4f;
+
+    // Sayfa süpürme renkleri STATIC bir yerde duruyor (bkz. MenuPageSweep):
     // geçişler yarışın ortasındaki ESC menüsünden de tetikleniyor, orada bu
     // obje yok. Oyuncu her zaman önce ana menüden geçtiği için burada bir kez
     // yazmak yetiyor.
@@ -66,8 +71,8 @@ public class PersonaMenuStyle : MonoBehaviour
 
     void PushSweepColors()
     {
-        PersonaPageSweep.DefaultLeadColor = accent;
-        PersonaPageSweep.DefaultTrailColor = backgroundColor;
+        MenuPageSweep.DefaultLeadColor = accent;
+        MenuPageSweep.DefaultTrailColor = backgroundColor;
     }
 
     [ContextMenu("Tüm Butonlara Uygula")]
@@ -75,7 +80,7 @@ public class PersonaMenuStyle : MonoBehaviour
     {
         PushSweepColors();
 
-        var buttons = GetComponentsInChildren<PersonaButton>(true);
+        var buttons = GetComponentsInChildren<MenuButton>(true);
         foreach (var b in buttons)
         {
             b.hoverFill = accent;
@@ -95,7 +100,7 @@ public class PersonaMenuStyle : MonoBehaviour
         }
 
         // İsim kutusu da aynı paleti kullanıyor ama kendi (sakin) davranışıyla.
-        foreach (var f in GetComponentsInChildren<PersonaField>(true))
+        foreach (var f in GetComponentsInChildren<MenuField>(true))
         {
             f.fill = idleFill;
             f.textColor = idleText;
@@ -111,7 +116,7 @@ public class PersonaMenuStyle : MonoBehaviour
 #endif
         }
 
-        var bg = GetComponentInChildren<PersonaBackgroundFX>(true);
+        var bg = GetComponentInChildren<MenuBackgroundFX>(true);
         if (bg != null)
         {
             var stripe = accent;
@@ -127,6 +132,6 @@ public class PersonaMenuStyle : MonoBehaviour
 #endif
         }
 
-        Debug.Log($"[PersonaMenuStyle] {buttons.Length} butona palet uygulandı.");
+        Debug.Log($"[MenuStyle] {buttons.Length} butona palet uygulandı.");
     }
 }

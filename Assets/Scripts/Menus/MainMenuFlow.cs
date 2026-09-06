@@ -41,6 +41,10 @@ public class MainMenuFlow : MonoBehaviour
     [Header("Oda ekranı")]
     public Button backButton;
 
+    [Tooltip("SADECE bir oturumdayken görünen 'Lobiden Ayrıl' butonu. " +
+             "'Geri' ile aynı yerde durur — ikisi asla aynı anda görünmez.")]
+    public Button leaveLobbyButton;
+
     [Tooltip("Bir oturuma BAĞLIYKEN gizlenecekler (Oyun Kur, Hızlı Katıl, Geri).")]
     public GameObject[] hideWhenConnected;
 
@@ -48,7 +52,7 @@ public class MainMenuFlow : MonoBehaviour
     public GameObject[] showWhenConnected;
 
     [Header("Geçiş")]
-    [Tooltip("Ekran değişiminde Persona süpürme animasyonu oynasın mı.")]
+    [Tooltip("Ekran değişiminde süpürme animasyonu oynasın mı.")]
     public bool useSweepTransitions = true;
 
     // Son uygulanan bağlantı durumu. Her karede SetActive çağırmamak için
@@ -82,6 +86,7 @@ public class MainMenuFlow : MonoBehaviour
         Wire(backButton, ShowMain);
         Wire(settingsButton, OpenSettings);
         Wire(quitButton, QuitApplication);
+        Wire(leaveLobbyButton, LeaveLobby);
     }
 
     static void Wire(Button button, UnityEngine.Events.UnityAction action)
@@ -145,7 +150,7 @@ public class MainMenuFlow : MonoBehaviour
     {
         if (change == null) return;
 
-        if (useSweepTransitions) PersonaPageSweep.Sweep(change);
+        if (useSweepTransitions) MenuPageSweep.Sweep(change);
         else change();
     }
 
@@ -159,6 +164,32 @@ public class MainMenuFlow : MonoBehaviour
         if (PauseMenuController.Instance == null) return;
 
         PauseMenuController.Instance.OpenSettingsFromMainMenu();
+    }
+
+    // ── Oda ekranı aksiyonları ──────────────────────────────────────────
+
+    /// <summary>
+    /// LOBİDEN AYRIL — oturumu kapatır (ESC > "Oyundan Ayrıl" ile AYNI iş).
+    ///
+    /// NEDEN AYRI BİR BUTON GEREKTİ: oturumdayken "Geri" gizleniyor (bkz.
+    /// ShowMain) çünkü ana ekrana dönmek oyuncuyu "yarım bağlı" bırakırdı.
+    /// Ama oda ekranında çıkışın nerede olduğu hiç belli değildi — tek yol
+    /// ESC menüsüydü ve oyuncunun onu aramayı bilmesi gerekiyordu.
+    ///
+    /// 🚨 `SceneManager.LoadScene` ya da `StopHost()` DOĞRUDAN ÇAĞRILMIYOR:
+    /// MyNetworkManager.LeaveGameIntentionally() host/client ayrımını kendisi
+    /// yapıyor, Steam lobisini kapatıyor ve "bağlantı koptu" uyarısını
+    /// bastırıyor (oyuncu kendi isteğiyle çıkıyor, hata görmemeli). Ana menü
+    /// sahnesini Mirror kendisi yüklüyor, sonrası LobbyManager.ResetToLobby.
+    /// </summary>
+    void LeaveLobby()
+    {
+        if (!IsConnected) return;
+
+        if (NetworkManager.singleton is MyNetworkManager manager)
+            manager.LeaveGameIntentionally();
+        else
+            Debug.LogWarning("[Ana Menü] MyNetworkManager bulunamadı — oturum kapatılamadı.");
     }
 
     void QuitApplication()

@@ -54,8 +54,26 @@ public class TrackGenerator : MonoBehaviour
     public float curbStripeLength = 2f;
     [Tooltip("Boş bırakılırsa otomatik kırmızı-beyaz çizgili bir materyal üretilir.")]
     public Material curbMaterial;
-    [Tooltip("Kenarlığa çarpışma yüzeyi eklensin mi? (Araba üstünden geçerken sarsılsın diye.)")]
+    [Tooltip("Kenarlığa çarpışma yüzeyi eklensin mi?\n\n" +
+             "⚠️ KAPATIRSAN yavaşlatma da gider — CarController zemini ışınla " +
+             "bulup collider'ın tag'ine bakıyor, collider yoksa 'Curb' tag'i " +
+             "hiç okunmuyor. Sarsıntı rahatsız ediyorsa bunu kapatmak yerine " +
+             "aşağıdaki 'Flat Curb Collider' seçeneğini kullan.")]
     public bool curbCollider = true;
+
+    [Tooltip("AÇIK (önerilen): çarpışma yüzeyi kenarlığın kabartmasını TAKİP ETMEZ, " +
+             "yolun birkaç santim üstünde DÜZ bir şerit olur.\n\n" +
+             "İki sorunu birden çözüyor: (1) araç kenarlıkta sarsılmıyor, " +
+             "(2) yavaşlatma kenarlığın TAMAMINDA çalışıyor — kapalıyken sadece " +
+             "en dış ucunda çalışıyordu, çünkü iç kenar yolla aynı hizada olduğu " +
+             "için ışın oraya değil yola çarpıyordu.\n\n" +
+             "Görüntü değişmiyor, kenarlık ekranda hâlâ kabartmalı.")]
+    public bool flatCurbCollider = true;
+
+    [Tooltip("Düz çarpışma şeridinin yol seviyesinden yüksekliği (metre). " +
+             "Yoldan biraz yüksek OLMALI ki süspansiyon ışını kesin ona çarpsın; " +
+             "ama tekerlek gözle görülür şekilde yükselmesin diye küçük tutulmalı.")]
+    [Range(0.005f, 0.1f)] public float curbColliderHeight = 0.03f;
 
     [Header("Viraj Yarıçapı (Kenarlık Bozulmasını Önler)")]
     [Tooltip("AÇIKKEN: her virajın yarıçapı ölçülür. Yol + kenarlık sığmayacak " +
@@ -1071,8 +1089,45 @@ public class TrackGenerator : MonoBehaviour
         if (curbCollider)
         {
             var mc = curbObject.AddComponent<MeshCollider>();
-            mc.sharedMesh = mesh;
+            mc.sharedMesh = flatCurbCollider ? BuildFlatCurbCollider(vertices, triangles) : mesh;
         }
+    }
+
+    /// <summary>
+    /// Kenarlık için AYRI, DÜMDÜZ bir çarpışma mesh'i üretir.
+    ///
+    /// 🚨 NEDEN AYRI: Collider olarak görsel mesh kullanılınca iki sorun birden
+    /// çıkıyordu:
+    ///   1) Kenarlık fiziksel olarak yükseltilmiş olduğu için araç üstünden
+    ///      geçerken SERT SARSILIYOR — oyuncular rahatsız edici buldu.
+    ///   2) Yavaşlatma sadece kenarlığın EN DIŞ UCUNDA çalışıyordu: iç kenar
+    ///      yolla tam aynı hizada (y=0) olduğu için süspansiyon ışını orada
+    ///      yola çarpıyor, "Curb" tag'ini hiç okumuyordu.
+    ///
+    /// Çözüm ikisini de kapatıyor: çarpışma yüzeyi yolun birkaç santim
+    /// üstünde DÜZ bir şerit. Sarsıntı yok (yükselti yok), ve şeridin
+    /// TAMAMI ışını yakalıyor (yoldan yüksek olduğu için ışın kesin ona
+    /// çarpıyor), yani yavaşlatma kenarlığın her yerinde çalışıyor.
+    ///
+    /// Görsel mesh'e DOKUNULMUYOR — kenarlık ekranda hâlâ kabartmalı.
+    /// </summary>
+    private Mesh BuildFlatCurbCollider(List<Vector3> sourceVertices, List<int> sourceTriangles)
+    {
+        var flat = new Vector3[sourceVertices.Count];
+        for (int i = 0; i < sourceVertices.Count; i++)
+        {
+            Vector3 v = sourceVertices[i];
+            // X/Z aynı kalıyor (aynı ayak izi), Y sabitleniyor.
+            flat[i] = new Vector3(v.x, curbColliderHeight, v.z);
+        }
+
+        return new Mesh
+        {
+            name = "Curb Collider (flat)",
+            indexFormat = UnityEngine.Rendering.IndexFormat.UInt32,
+            vertices = flat,
+            triangles = sourceTriangles.ToArray()
+        };
     }
 
     /// <summary>

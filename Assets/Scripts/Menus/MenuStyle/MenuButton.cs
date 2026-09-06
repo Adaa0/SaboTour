@@ -14,23 +14,23 @@ using TMPro;
 //
 // OLUŞTURDUĞU YAPI (mevcut hiyerarşiyi BOZMADAN, butonun kendi içinde):
 //   Buton (Button + Image[alfa 0, sadece tıklama alanı])
-//     ├─ PersonaSlabRoot        ← animasyon burada
-//     │    ├─ PersonaShadow
-//     │    └─ PersonaSlab
+//     ├─ SlabRoot        ← animasyon burada
+//     │    ├─ SlabShadow
+//     │    └─ Slab
 //     └─ Yazı (mevcut, en sonda kaldığı için hep üstte çiziliyor)
 //
 // 🚨 YAZI İKİ TÜRLÜ OLABİLİYOR: lobi butonları TextMeshPro, duraklatma
 // menüsü butonları Legacy Text kullanıyor. İkisi de destekleniyor.
 [DisallowMultipleComponent]
 [RequireComponent(typeof(RectTransform))]
-public class PersonaButton : MonoBehaviour,
+public class MenuButton : MonoBehaviour,
     IPointerEnterHandler, IPointerExitHandler,
     IPointerDownHandler, IPointerUpHandler,
     ISelectHandler, IDeselectHandler
 {
-    public const string RootName = "PersonaSlabRoot";
-    public const string ShadowName = "PersonaShadow";
-    public const string SlabName = "PersonaSlab";
+    public const string RootName = "SlabRoot";
+    public const string ShadowName = "SlabShadow";
+    public const string SlabName = "Slab";
 
     [Header("Renkler")]
     public Color idleFill = new Color32(0xEC, 0xEC, 0xEC, 0xFF);
@@ -343,10 +343,10 @@ public class PersonaButton : MonoBehaviour,
         punchAge = 0f;   // yeni seçim: tokat baştan oynasın
 
         if (spawnStar)
-            PersonaStarBurst.Spawn(rt, starOffset, hoverFill, starSize);
+            MenuStarBurst.Spawn(rt, starOffset, hoverFill, starSize);
 
         if (flashOnHover)
-            PersonaScreenFlash.Trigger(Color.white, flashFrames, flashAlpha);
+            MenuScreenFlash.Trigger(Color.white, flashFrames, flashAlpha);
     }
 
     void Update()

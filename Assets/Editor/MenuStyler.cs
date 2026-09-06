@@ -13,11 +13,11 @@ using TMPro;
 // beğenmezsen sahneyi yeniden yükleyerek tek adımda geri dönebilmen demek.
 // Beğenirsen Ctrl+S. Beğenmezsen ya "Stili Kaldır" ya da sahneyi kaydetmeden
 // yeniden aç.
-public static class PersonaMenuStyler
+public static class MenuStyler
 {
     // Videodaki dekoratif işleme SOKULMAYACAK objeler.
     // Buton muamelesi görmeyecek objeler. (İsim kutusu artık DIŞARIDA DEĞİL —
-    // ama buton gibi değil, kendi sakin bileşeniyle: PersonaField.)
+    // ama buton gibi değil, kendi sakin bileşeniyle: MenuField.)
     static readonly string[] SkipNames = new string[0];
 
     [MenuItem("SaboTour/Persona Menü/Stili Uygula", false, 100)]
@@ -31,8 +31,8 @@ public static class PersonaMenuStyler
         var canvas = FindLobbyCanvas(interactive);
         if (canvas == null) return;
 
-        var style = canvas.GetComponent<PersonaMenuStyle>();
-        if (style == null) style = canvas.gameObject.AddComponent<PersonaMenuStyle>();
+        var style = canvas.GetComponent<MenuStyle>();
+        if (style == null) style = canvas.gameObject.AddComponent<MenuStyle>();
 
         var panel = canvas.transform.Find("LobbyPanel");
         if (panel == null)
@@ -53,28 +53,28 @@ public static class PersonaMenuStyler
         // kapatıyor (SetActive(false)), onun kardeşleri açık kalıyor.
         // Panelin İÇİNDE olunca panelle birlikte kendiliğinden kayboluyor —
         // ekstra koda gerek yok.
-        var existingBg = canvas.GetComponentInChildren<PersonaBackgroundFX>(true);
+        var existingBg = canvas.GetComponentInChildren<MenuBackgroundFX>(true);
         Transform bgTr = existingBg != null ? existingBg.transform : null;
         if (bgTr == null)
         {
-            var go = new GameObject("PersonaBackground", typeof(RectTransform));
+            var go = new GameObject("MenuBackground", typeof(RectTransform));
             bgTr = go.transform;
         }
         bgTr.SetParent(panel, false);   // eski kurulumdan kalanı da buraya taşır
         var bgRt = (RectTransform)bgTr;
         bgRt.anchorMin = Vector2.zero;
         bgRt.anchorMax = Vector2.one;
-        // 🚨 Ekrandan 60px BÜYÜK. Üstünde PersonaUIDrift var ve arka planı
+        // 🚨 Ekrandan 60px BÜYÜK. Üstünde MenuUIDrift var ve arka planı
         // birkaç piksel oynatıyor — tam ekran boyutunda olsaydı kayarken
         // kenarlarda boşluk açılıp arkadaki kamera rengi sızardı.
         bgRt.offsetMin = new Vector2(-60f, -60f);
         bgRt.offsetMax = new Vector2(60f, 60f);
         bgTr.SetSiblingIndex(0);   // her şeyin arkasında
 
-        if (bgTr.GetComponent<PersonaBackgroundFX>() == null)
-            bgTr.gameObject.AddComponent<PersonaBackgroundFX>();
-        if (bgTr.GetComponent<PersonaUIDrift>() == null)
-            bgTr.gameObject.AddComponent<PersonaUIDrift>();
+        if (bgTr.GetComponent<MenuBackgroundFX>() == null)
+            bgTr.gameObject.AddComponent<MenuBackgroundFX>();
+        if (bgTr.GetComponent<MenuUIDrift>() == null)
+            bgTr.gameObject.AddComponent<MenuUIDrift>();
 
         // 2) BUTONLAR + İSİM KUTUSU
         var buttons = panel.GetComponentsInChildren<Button>(true)
@@ -111,8 +111,8 @@ public static class PersonaMenuStyler
             if (fields.Contains(tr))
             {
                 // Yazı kutusu: aynı şekil dili, sakin davranış.
-                var pf = tr.GetComponent<PersonaField>();
-                if (pf == null) pf = tr.gameObject.AddComponent<PersonaField>();
+                var pf = tr.GetComponent<MenuField>();
+                if (pf == null) pf = tr.gameObject.AddComponent<MenuField>();
 
                 pf.fill = style.idleFill;
                 pf.textColor = style.idleText;
@@ -125,8 +125,8 @@ public static class PersonaMenuStyler
             }
             else
             {
-                var pb = tr.GetComponent<PersonaButton>();
-                if (pb == null) pb = tr.gameObject.AddComponent<PersonaButton>();
+                var pb = tr.GetComponent<MenuButton>();
+                if (pb == null) pb = tr.gameObject.AddComponent<MenuButton>();
 
                 pb.hoverFill = style.accent;
                 pb.idleFill = style.idleFill;
@@ -144,8 +144,8 @@ public static class PersonaMenuStyler
             rt.localEulerAngles = new Vector3(0f, 0f, style.tiltDegrees);
 
             // Kademeli giriş — sıradakine biraz daha gecikme.
-            var entrance = tr.GetComponent<PersonaEntrance>();
-            if (entrance == null) entrance = tr.gameObject.AddComponent<PersonaEntrance>();
+            var entrance = tr.GetComponent<MenuEntrance>();
+            if (entrance == null) entrance = tr.gameObject.AddComponent<MenuEntrance>();
             entrance.delay = i * style.staggerSeconds;
             entrance.fromOffset = style.entranceFrom;
             entrance.duration = style.entranceDuration;
@@ -180,7 +180,7 @@ public static class PersonaMenuStyler
 
         int count = 0;
 
-        foreach (var pb in canvas.GetComponentsInChildren<PersonaButton>(true))
+        foreach (var pb in canvas.GetComponentsInChildren<MenuButton>(true))
         {
             pb.RemovePieces();
             StripExtras(pb.gameObject);
@@ -188,7 +188,7 @@ public static class PersonaMenuStyler
             count++;
         }
 
-        foreach (var pf in canvas.GetComponentsInChildren<PersonaField>(true))
+        foreach (var pf in canvas.GetComponentsInChildren<MenuField>(true))
         {
             pf.RemovePieces();
             StripExtras(pf.gameObject);
@@ -198,10 +198,10 @@ public static class PersonaMenuStyler
 
         // Arka planı ADA göre değil BİLEŞENE göre buluyoruz — eski kurulumda
         // canvas'ın altındaydı, yenisinde LobbyPanel'in altında.
-        var bg = canvas.GetComponentInChildren<PersonaBackgroundFX>(true);
+        var bg = canvas.GetComponentInChildren<MenuBackgroundFX>(true);
         if (bg != null) Object.DestroyImmediate(bg.gameObject);
 
-        var style = canvas.GetComponent<PersonaMenuStyle>();
+        var style = canvas.GetComponent<MenuStyle>();
         if (style != null) Object.DestroyImmediate(style);
 
         EditorSceneManager.MarkSceneDirty(canvas.gameObject.scene);
@@ -218,7 +218,7 @@ public static class PersonaMenuStyler
         var canvas = FindLobbyCanvas(true);
         if (canvas == null) return;
 
-        var style = canvas.GetComponent<PersonaMenuStyle>();
+        var style = canvas.GetComponent<MenuStyle>();
         if (style == null)
         {
             EditorUtility.DisplayDialog("Persona Menü",
@@ -257,7 +257,7 @@ public static class PersonaMenuStyler
         }
 
         // Palet açık sahnedeki ayarlardan okunuyor ki iki menü aynı görünsün.
-        var style = Object.FindObjectsByType<PersonaMenuStyle>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+        var style = Object.FindObjectsByType<MenuStyle>(FindObjectsInactive.Include, FindObjectsSortMode.None)
                           .FirstOrDefault();
 
         Color accent = style != null ? style.accent : new Color32(0xD8, 0x1E, 0x2C, 0xFF);
@@ -286,8 +286,8 @@ public static class PersonaMenuStyler
             {
                 var b = ordered[i];
 
-                var pb = b.GetComponent<PersonaButton>();
-                if (pb == null) pb = b.gameObject.AddComponent<PersonaButton>();
+                var pb = b.GetComponent<MenuButton>();
+                if (pb == null) pb = b.gameObject.AddComponent<MenuButton>();
 
                 pb.hoverFill = accent;
                 pb.idleFill = idleFill;
@@ -303,8 +303,8 @@ public static class PersonaMenuStyler
 
                 ((RectTransform)b.transform).localEulerAngles = new Vector3(0f, 0f, tilt);
 
-                var entrance = b.GetComponent<PersonaEntrance>();
-                if (entrance == null) entrance = b.gameObject.AddComponent<PersonaEntrance>();
+                var entrance = b.GetComponent<MenuEntrance>();
+                if (entrance == null) entrance = b.gameObject.AddComponent<MenuEntrance>();
                 entrance.delay = i * stagger;
                 entrance.fromOffset = new Vector2(-220f, 0f);
                 entrance.duration = 0.34f;
@@ -332,7 +332,7 @@ public static class PersonaMenuStyler
         if (root == null) return;
 
         int count = 0;
-        foreach (var pb in root.GetComponentsInChildren<PersonaButton>(true))
+        foreach (var pb in root.GetComponentsInChildren<MenuButton>(true))
         {
             pb.RemovePieces();
             StripExtras(pb.gameObject);
@@ -352,7 +352,7 @@ public static class PersonaMenuStyler
     // Persona'nın eklediği yardımcı bileşenleri söker.
     static void StripExtras(GameObject go)
     {
-        var entrance = go.GetComponent<PersonaEntrance>();
+        var entrance = go.GetComponent<MenuEntrance>();
         if (entrance != null) Object.DestroyImmediate(entrance);
 
         var group = go.GetComponent<CanvasGroup>();

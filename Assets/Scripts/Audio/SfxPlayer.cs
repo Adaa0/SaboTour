@@ -69,8 +69,10 @@ public static class SfxPlayer
     /// Patlama, çarpma, gıdaklama, buton gibi "bir yerden gelen" sesler için.
     /// </summary>
     /// <param name="pitchJitter">Her çalışta perdeyi ±bu kadar rastgele kaydırır (0.05 = %5). Aynı sesin arka arkaya tekrarı robotik/tekdüze duyulmasın diye.</param>
+    /// <param name="delay">Bu kadar saniye SONRA başlar (0 = anında). Ör. buz bombasında patlama + frost sesini çok kısa aralıkla çalmak için.</param>
     public static void PlayAt(AudioClip clip, Vector3 position, float volume = 1f,
-                              float pitchJitter = 0.05f, float minDistance = 8f, float maxDistance = 90f)
+                              float pitchJitter = 0.05f, float minDistance = 8f, float maxDistance = 90f,
+                              float delay = 0f)
     {
         if (clip == null) return;
 
@@ -83,16 +85,20 @@ public static class SfxPlayer
         src.minDistance = minDistance;
         src.maxDistance = maxDistance;
         src.clip = clip;
-        src.volume = Mathf.Clamp01(volume) * masterVolume;
+        // klip volume × 3D efekt kanalı × geliştirici master × oyuncu master
+        src.volume = Mathf.Clamp01(volume) * AudioBus.WorldFinal * masterVolume;
         src.pitch = 1f + Random.Range(-pitchJitter, pitchJitter);
-        src.Play();
+
+        if (delay > 0f) src.PlayDelayed(delay);
+        else src.Play();
     }
 
     /// <summary>
     /// 2D ses — konumdan bağımsız, hep aynı seviyede duyulur. Buton tıklaması,
     /// tur bitti bildirimi, kazandın/kaybettin gibi ARAYÜZ sesleri için.
     /// </summary>
-    public static void PlayUI(AudioClip clip, float volume = 1f, float pitchJitter = 0f)
+    /// <param name="pitch">Sabit perde çarpanı (1 = normal). Rastgele DEĞİL — ör. geri sayımda 3→2→1'de perdeyi kademe kademe yükseltmek için.</param>
+    public static void PlayUI(AudioClip clip, float volume = 1f, float pitchJitter = 0f, float pitch = 1f)
     {
         if (clip == null) return;
 
@@ -102,8 +108,9 @@ public static class SfxPlayer
         src.transform.position = Vector3.zero;
         src.spatialBlend = 0f;          // tamamen 2D
         src.clip = clip;
-        src.volume = Mathf.Clamp01(volume) * masterVolume;
-        src.pitch = 1f + Random.Range(-pitchJitter, pitchJitter);
+        // klip volume × arayüz kanalı × geliştirici master × oyuncu master
+        src.volume = Mathf.Clamp01(volume) * AudioBus.UiFinal * masterVolume;
+        src.pitch = pitch + Random.Range(-pitchJitter, pitchJitter);
         src.Play();
     }
 

@@ -129,6 +129,34 @@ public class RacePodiumManager : NetworkBehaviour
     [Tooltip("Herkes doğduktan sonra kaç saniye geri sayılsın (3 = '3, 2, 1, BAŞLA').")]
     [SerializeField] private float countdownSeconds = 3f;
 
+    [Tooltip("GÜVENLİK AĞI: sunucunun 'BAŞLA' RPC'si bir client'a hiç ulaşmazsa " +
+             "(nadir), o client kendi saatine göre bu kadar saniye geçince yine de " +
+             "başlar — sonsuza kadar kilitli kalmasın diye. Normalde RPC anında gelir " +
+             "ve bu hiç devreye girmez.")]
+    [SerializeField] private float goFallbackGraceSeconds = 1.5f;
+
+    [Header("Geri Sayım Sesi")]
+    [Tooltip("TEK PARÇA geri sayım klibi — içinde '3... 2... 1... BAŞLA!' HEPSİ var. " +
+             "Bu doluysa aşağıdaki tick/go alanları YOK SAYILIR, bu klip bir kez çalar. " +
+             "⚠️ Klipteki 'BAŞLA' sözcüğünün klip başından kaç saniye sonra geldiğini " +
+             "'Countdown Full Clip Lead' alanına yaz — yoksa 'BAŞLA' yanlış anda düşer.")]
+    [SerializeField] private AudioClip countdownFullClip;
+    [Tooltip("TEK PARÇA klipte, 'BAŞLA' sözcüğü klip BAŞLADIKTAN kaç saniye sonra duyuluyor. " +
+             "Klip bu kadar erken başlatılır ki 'BAŞLA' tam yarış anına denk gelsin. " +
+             "Ör. klip 3.5 sn ve 3.0'da 'GO' diyorsa buraya 3.0 yaz.")]
+    [SerializeField] private float countdownFullClipLead = 3f;
+
+    [Tooltip("(Tek parça klip YOKSA kullanılır) Her sayıda (3, 2, 1) çalan kısa 'bip'. Boşsa sayılar sessiz.")]
+    [SerializeField] private AudioClip countdownTickClip;
+    [Tooltip("(Tek parça klip YOKSA kullanılır) 'BAŞLA!' sesi. Boşsa 'bip' daha tiz perdeyle çalınır.")]
+    [SerializeField] private AudioClip countdownGoClip;
+    [Range(0f, 1f)][SerializeField] private float countdownVolume = 0.8f;
+    [Tooltip("(Tek parça klip YOKSA) 3→2→1 giderken 'bip'in perdesi kademe kademe yükselir.")]
+    [SerializeField] private bool countdownRisingPitch = true;
+
+    // Tek parça klip bu yarışta çalındı mı (bir kez çalsın).
+    private bool fullCountdownClipPlayed;
+
     [Tooltip("Tüm yarışçıların doğması bu kadar saniyede tamamlanmazsa geri sayım yine de başlar — pist üretimi takılırsa yarış sonsuza kadar beklemesin.")]
     [SerializeField] private float maxSpawnWaitSeconds = 8f;
 
@@ -145,10 +173,17 @@ public class RacePodiumManager : NetworkBehaviour
 
     [Tooltip("Ekrandaki 'saf tur tahmini' bu hıza göre hesaplanıyor. 24 Ağustos " +
              "2026'da 5 gerçek pistte ölçülen ilk-tur ortalaması: 199-217 km/h " +
-             "(araç azamisinin %90-98'i, ortalama %94.9). Gerçek oyuncu davranışı " +
-             "değişirse (yeni oyuncular, farklı araç ayarları) bu değeri playtest " +
-             "sonuçlarına göre güncelle — tahminin doğruluğu buna bağlı.")]
-    [SerializeField] private float estimatedAvgLapSpeedKmh = 209f;
+             "(araç azamisinin %90-98'i, ortalama %94.9). " +
+             "🔧 5 Eylül 2026: acceleration azaltılınca 194'e düşürüldü (54→58sn, " +
+             "61→66sn ölçümüyle, ×1.078 yavaşlama). Aynı gün BİR turluk yeni veri " +
+             "geldi (194'ün tahmin ettiği 61sn'lik pist gerçekte 57sn'de bitti — " +
+             "tahminden %6.6 hızlı) — tek tur istatistiksel olarak yetersiz olduğu " +
+             "için tam oraya çekilmedi, geliştirici kararıyla ara değer **200**'e " +
+             "sabitlendi. Gerçek oyuncu davranışı ya da acceleration DEĞİŞİRSE bu " +
+             "değeri playtest sonuçlarına göre (birkaç pistin ORTALAMASI, tek tur " +
+             "değil) tekrar güncelle — tahminin doğruluğu buna bağlı, ve bu değer " +
+             "hem bilgi ekranını HEM sabotajcının kazanma süresi formülünü besliyor.")]
+    [SerializeField] private float estimatedAvgLapSpeedKmh = 197f;
 
     // Her yarışta YENİ bir RacePodiumManager sahneye yükleniyor (Online
     // Scene her seferinde baştan açılıyor), yani bu alan ROL İPUCU'ndaki
@@ -231,6 +266,9 @@ public class RacePodiumManager : NetworkBehaviour
     // Server: oyuncuların doğmasını beklemeye başladığımız an.
     private float spawnWaitStarted = -1f;
 
+    // Server: "BAŞLA" RPC'si gönderildi mi? (bir kez gönderilsin)
+    private bool goSent;
+
     // Süre sınırı yarış BAŞINDA bir kere hesaplanıp donduruluyor.
     //
     // ÖNCEDEN NE YANLIŞTI: limit her karede `PlayerRaceController.AllPlayers.
@@ -255,6 +293,8 @@ public class RacePodiumManager : NetworkBehaviour
         CountdownArmed = false;
         StartLockActive = true;   // geri sayım kurulana kadar araçlar kilitli
         lastShownCount = int.MinValue;
+        goSent = false;
+        fullCountdownClipPlayed = false;
     }
 
     void OnDestroy()
@@ -465,8 +505,21 @@ public class RacePodiumManager : NetworkBehaviour
         if (isServer && raceStartTime < 0d)
             ServerTryArmCountdown();
 
-        // ── HER MAKİNE: geri sayım bitti mi? ──
+        // ── HER MAKİNE: geri sayım ekranı (3-2-1 sayısı) ──
         UpdateStartState();
+
+        // ── SERVER: geri sayım bitince HERKESE tek otoritatif "BAŞLA" ──
+        // 🚨 Yarışın fiilen başlaması (araç kilidinin açılması) artık YEREL
+        // SAAT KARŞILAŞTIRMASIYLA DEĞİL, bu RPC ile oluyor. Sebep: her makine
+        // `NetworkTime.time`'ı ayrı tahmin ediyor ve yükleme takılması sırasında
+        // bu tahmin makineler arası >1 sn sapabiliyordu — bir arabanın diğerinden
+        // belirgin şekilde erken başlaması bundandı. RPC gecikmesi ise tek yön
+        // ~15-60 ms ve tutarlı. (Host'ta RPC lokal de çalışır → tek kod yolu.)
+        if (isServer && !goSent && raceStartTime >= 0d && NetworkTime.time >= raceStartTime)
+        {
+            goSent = true;
+            RpcRaceGo();
+        }
 
         if (!isServer || raceOutcome != RaceOutcome.Ongoing) return;
 
@@ -529,16 +582,21 @@ public class RacePodiumManager : NetworkBehaviour
     }
 
     /// <summary>
-    /// Geri sayımı ekranda gösterir ve bittiğinde `RaceStarted`'ı açar.
-    /// SERVER'DA DA ÇALIŞIYOR — host aynı zamanda bir oyuncu ve onun da
-    /// saatinin aynı anda başlaması gerekiyor.
+    /// SADECE geri sayım EKRANINI sürüyor (pist bilgisi ekranı + "3, 2, 1").
+    ///
+    /// 🚨 ARTIK `RaceStarted`'ı BURASI AÇMIYOR. Yarışın fiilen başlaması
+    /// (araç kilidinin açılması) sunucunun gönderdiği `RpcRaceGo` ile oluyor —
+    /// çünkü her makinenin `NetworkTime.time` tahmini farklı ve yükleme
+    /// takılması sırasında makineler arası >1 sn sapabiliyordu (bir araba
+    /// diğerinden erken başlıyordu). Buradaki sayılar hâlâ yerel saatten
+    /// geliyor (birkaç yüz ms sapma sayıda görünmez), ama BAŞLANGIÇ ANI
+    /// tek otoritatif RPC'den.
     /// </summary>
     private void UpdateStartState()
     {
         if (raceStartTime < 0d)
         {
-            // Henüz kurulmadı: araçlar kilitli beklesin ki geri sayım
-            // gelmeden kimse hareket etmesin.
+            // Henüz kurulmadı: araçlar kilitli beklesin.
             StartLockActive = true;
             RaceStarted = false;
             CountdownArmed = false;
@@ -547,27 +605,36 @@ public class RacePodiumManager : NetworkBehaviour
 
         CountdownArmed = true;
 
+        if (RaceStarted) return;   // "BAŞLA" geldi (RpcRaceGo) — sayaç işi bitti
+
         double remaining = raceStartTime - NetworkTime.time;
 
-        if (remaining <= 0d)
+        // GÜVENLİK AĞI: `RpcRaceGo` bir şekilde hiç ulaşmadıysa client sonsuza
+        // kadar kilitli kalmasın. Normalde RPC `raceStartTime` anında gelir,
+        // bu ancak RPC kaybolursa devreye girer.
+        if (remaining <= -goFallbackGraceSeconds)
         {
-            if (!RaceStarted)
-            {
-                RaceStarted = true;
-                StartLockActive = false;
-                ScreenNotice.Show(Loc.T("race.go"), 1.2f);
-            }
-
+            ApplyRaceGo();
             return;
         }
 
         StartLockActive = true;
-        RaceStarted = false;
+
+        // TEK PARÇA GERİ SAYIM KLİBİ: '3-2-1-BAŞLA' hepsi tek dosyada. Klibi,
+        // içindeki 'BAŞLA' sözcüğü yarış anına denk gelecek kadar erken
+        // başlatıyoruz. Bu doluyken tick/go sesleri hiç çalmıyor.
+        if (countdownFullClip != null && !fullCountdownClipPlayed)
+        {
+            float lead = Mathf.Min(countdownFullClipLead,
+                                   Mathf.Max(0f, trackInfoNoticeSeconds) + Mathf.Max(0f, countdownSeconds));
+            if (remaining <= lead)
+            {
+                fullCountdownClipPlayed = true;
+                SfxPlayer.PlayUI(countdownFullClip, countdownVolume);
+            }
+        }
 
         // İLK PENCERE: "3-2-1" henüz başlamadı, pist bilgisi ekranındayız.
-        // Bir kez gösterip sıradaki kareler için hemen çıkıyoruz — `shown`
-        // hesaplamasına (aşağıda) hiç girmiyoruz, yoksa büyük bir sayıdan
-        // ("7" gibi) geri saymaya başlardı.
         if (remaining > countdownSeconds)
         {
             if (!trackInfoShown)
@@ -578,15 +645,61 @@ public class RacePodiumManager : NetworkBehaviour
             return;
         }
 
-        // İKİNCİ PENCERE: 3 → 2 → 1. Aynı sayıyı her karede yeniden
-        // yazmıyoruz; ScreenNotice yeni mesajı eskisinin yerine koyduğu
-        // için sayaç kendiliğinden güncelleniyor.
+        // İKİNCİ PENCERE: 3 → 2 → 1. (0 ve negatifi gösterme — "BAŞLA"yı
+        // RpcRaceGo yazıyor.)
         int shown = Mathf.CeilToInt((float)remaining);
-        if (shown == lastShownCount) return;
+        if (shown < 1 || shown == lastShownCount) return;
 
         lastShownCount = shown;
         ScreenNotice.Show(shown.ToString(), 1.1f);
+
+        // Tek parça klip varsa sayı sesini o hallediyor, burada çalma.
+        if (countdownFullClip == null)
+        {
+            // Sayı sesi: shown 3 → perde 1.0, 2 → 1.09, 1 → 1.18 (yükseliyorsa).
+            float tickPitch = countdownRisingPitch ? 1f + (3 - Mathf.Clamp(shown, 1, 3)) * 0.09f : 1f;
+            SfxPlayer.PlayUI(countdownTickClip, countdownVolume, 0f, tickPitch);
+        }
     }
+
+    /// <summary>
+    /// Yarışı BU MAKİNEDE fiilen başlatır — araç kilidini açar, "BAŞLA" yazısını
+    /// gösterir. İki yerden çağrılıyor: (1) sunucunun `RpcRaceGo`'su (normal yol,
+    /// herkeste ~aynı an), (2) yukarıdaki güvenlik ağı (RPC kaybolursa).
+    /// Idempotent.
+    /// </summary>
+    private void ApplyRaceGo()
+    {
+        if (RaceStarted) return;
+        RaceStarted = true;
+        StartLockActive = false;
+        ScreenNotice.Show(Loc.T("race.go"), 1.2f);
+
+        // "BAŞLA" sesi.
+        if (countdownFullClip != null)
+        {
+            // Tek parça klip zaten "BAŞLA"yı kendi içinde söylüyor — burada
+            // ekstra bir ses çalma.
+        }
+        else if (countdownGoClip != null)
+        {
+            SfxPlayer.PlayUI(countdownGoClip, countdownVolume);
+        }
+        else
+        {
+            // Ayrı GO klibi yok — 'bip'i en tiz perdeyle çal.
+            SfxPlayer.PlayUI(countdownTickClip, countdownVolume, 0f,
+                             countdownRisingPitch ? 1.34f : 1.15f);
+        }
+    }
+
+    /// <summary>
+    /// Sunucudan gelen TEK otoritatif "BAŞLA". Host'ta da lokal çalışır
+    /// (Mirror ClientRpc'yi host'un kendisinde de tetikler), yani host ve
+    /// client tek kod yolundan geçiyor.
+    /// </summary>
+    [ClientRpc]
+    private void RpcRaceGo() => ApplyRaceGo();
 
     /// <summary>
     /// Pist uzunluğu + tahmini süreleri gösteren bilgi ekranı.

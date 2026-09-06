@@ -7,9 +7,7 @@ public class Checkpoint : MonoBehaviour
     public bool isFinishLine;
 
     [Header("Görsel (Bayrak)")]
-    [Tooltip("Normal checkpoint'lerde gösterilecek bayrak (yeşil).")]
     public GameObject normalFlagVisual;
-    [Tooltip("Başlangıç/bitiş checkpoint'inde (isFinishLine) gösterilecek bayrak (damalı).")]
     public GameObject finishFlagVisual;
 
     private void Start()
@@ -17,12 +15,6 @@ public class Checkpoint : MonoBehaviour
         RefreshVisual();
     }
 
-    /// <summary>
-    /// isFinishLine'a göre doğru bayrağı açıp diğerini kapatır. TrackGenerator
-    /// checkpoint'i üretip isFinishLine'ı ATADIKTAN HEMEN SONRA bunu çağırıyor
-    /// (Instantiate anındaki Awake'te isFinishLine henüz set edilmemiş olurdu).
-    /// Sahneye elle yerleştirilmiş checkpoint'ler için de Start() zaten çağırıyor.
-    /// </summary>
     public void RefreshVisual()
     {
         if (normalFlagVisual != null) normalFlagVisual.SetActive(!isFinishLine);
@@ -51,11 +43,5 @@ public class Checkpoint : MonoBehaviour
                 }
             }
         }
-    }
-
-    private void OnDrawGizmos()
-    {
-        Gizmos.color = isFinishLine ? Color.red : Color.green;
-        Gizmos.DrawCube(transform.position, Vector3.one);
     }
 }

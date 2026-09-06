@@ -40,6 +40,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 8950854651818531988}
     m_Modifications:
+    - target: {fileID: 2031585599322011626, guid: fd6dfa0c5e974ce49910ce06a104072a, type: 3}
+      propertyPath: m_Mesh
+      value: 
+      objectReference: {fileID: 4300000, guid: 208008e4de6f3894197ff565c6e49e20, type: 2}
     - target: {fileID: 2365990072255013621, guid: fd6dfa0c5e974ce49910ce06a104072a, type: 3}
       propertyPath: m_Name
       value: kaya
@@ -84,6 +88,14 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4311443612235973408, guid: fd6dfa0c5e974ce49910ce06a104072a, type: 3}
+      propertyPath: m_Materials.Array.size
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4311443612235973408, guid: fd6dfa0c5e974ce49910ce06a104072a, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 99211e8a57be29e41a2b58225326e972, type: 2}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []

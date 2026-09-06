@@ -6,7 +6,7 @@ using UnityEngine.UI;
 //
 // Prefab GEREKMİYOR: çağrıldığı anda kendi objelerini kurup, işi bitince
 // kendini yok ediyor (projedeki "prefab yoksa kendini kur" deseni).
-public class PersonaStarBurst : MonoBehaviour
+public class MenuStarBurst : MonoBehaviour
 {
     RectTransform rt;
     CanvasGroup group;
@@ -21,7 +21,7 @@ public class PersonaStarBurst : MonoBehaviour
     {
         if (parent == null || !Application.isPlaying) return;
 
-        var go = new GameObject("PersonaStar", typeof(RectTransform), typeof(CanvasGroup));
+        var go = new GameObject("MenuStar", typeof(RectTransform), typeof(CanvasGroup));
         var starRt = (RectTransform)go.transform;
         starRt.SetParent(parent, false);
         starRt.anchorMin = starRt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -33,7 +33,7 @@ public class PersonaStarBurst : MonoBehaviour
         MakeBar(starRt, color, size, thickness, 0f);
         MakeBar(starRt, color, size, thickness, 90f);
 
-        var star = go.AddComponent<PersonaStarBurst>();
+        var star = go.AddComponent<MenuStarBurst>();
         star.rt = starRt;
         star.group = go.GetComponent<CanvasGroup>();
         star.group.blocksRaycasts = false;

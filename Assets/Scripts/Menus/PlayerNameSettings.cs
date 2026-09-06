@@ -68,8 +68,8 @@ public static class PlayerNameSettings
     {
         if (SteamManager.Initialized)
         {
-            string persona = Sanitize(SteamFriends.GetPersonaName());
-            if (!string.IsNullOrEmpty(persona)) return persona;
+            string steamName = Sanitize(SteamFriends.GetPersonaName());
+            if (!string.IsNullOrEmpty(steamName)) return steamName;
         }
 
         return Fallback;

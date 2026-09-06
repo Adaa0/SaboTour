@@ -8,7 +8,7 @@ using UnityEngine;
 // TAMAMEN BAĞIMSIZ çiziliyor — kamerayı oynatmak menüde hiçbir şeyi
 // kıpırdatmazdı. Aynı hissi veren doğru yer UI'ın kendisi.
 [RequireComponent(typeof(RectTransform))]
-public class PersonaUIDrift : MonoBehaviour
+public class MenuUIDrift : MonoBehaviour
 {
     [Tooltip("Kayma mesafesi (piksel). 12'nin üstü fark edilir hale gelir, amaç fark EDİLMEMESİ.")]
     public float positionAmount = 9f;

@@ -58,8 +58,14 @@ public class IceBomb : MonoBehaviour
     public AudioClip impactClip;
     [Tooltip("Patlamadan önceki yanıp sönme sırasında her yanışta çalan bip sesi (bomba geri sayımı). Boş bırakılabilir.")]
     public AudioClip beepClip;
-    [Tooltip("Patlama + buz alanının oluştuğu an.")]
+    [Tooltip("Patlama sesi (ilk vuruş — 'BUM').")]
     public AudioClip explosionClip;
+    [Tooltip("Donma/buz sesi. Patlamadan HEMEN SONRA (çok kısa aralıkla) çalar — " +
+             "'BUM ... pşşş-krak' hissi. Boş bırakılırsa sadece patlama çalar.")]
+    public AudioClip frostClip;
+    [Tooltip("Frost sesi patlamadan kaç saniye SONRA başlasın. 0.08-0.15 arası iyi — " +
+             "iki ses birbirine yapışık ama ayrı ayrı duyuluyor.")]
+    [Range(0f, 0.5f)] public float frostDelaySeconds = 0.12f;
     [Range(0f, 1f)] public float sfxVolume = 1f;
 
     [Header("Kamera Sarsıntısı (bomba YERE DÜŞTÜĞÜ an)")]
@@ -167,7 +173,13 @@ public class IceBomb : MonoBehaviour
         // Patlama sesi EN BAŞTA — altındaki kod bu objeyi Destroy ediyor,
         // ama SfxPlayer sesi bombadan bağımsız bir kaynaktan çaldığı için
         // obje yok olsa bile ses sonuna kadar duyuluyor.
-        SfxPlayer.PlayAt(explosionClip, transform.position, sfxVolume, 0.05f, 12f, 140f);
+        //
+        // İKİ KATMAN: önce patlama ('BUM'), hemen ardından frost ('pşşş').
+        // Frost'un gecikmesi SfxPlayer'ın kendi PlayDelayed'ı ile veriliyor —
+        // burada coroutine kullanamayız çünkü bu obje birazdan Destroy oluyor.
+        Vector3 pos = transform.position;
+        SfxPlayer.PlayAt(explosionClip, pos, sfxVolume, 0.05f, 12f, 140f);
+        SfxPlayer.PlayAt(frostClip, pos, sfxVolume, 0.05f, 12f, 140f, frostDelaySeconds);
 
         // Buz alanı oluştur
         GameObject ice = Instantiate(icePatchPrefab, transform.position, Quaternion.identity);

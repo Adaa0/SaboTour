@@ -118,10 +118,12 @@ MonoBehaviour:
   propIgnoreMinSeconds: 1.5
   propIgnoreMaxSeconds: 8
   icePatchLifetime: 12
-  launchClip: {fileID: 0}
-  impactClip: {fileID: 0}
-  beepClip: {fileID: 0}
-  explosionClip: {fileID: 0}
+  launchClip: {fileID: 8300000, guid: a607b11527312bc49af04ad70bcb0a3f, type: 3}
+  impactClip: {fileID: 8300000, guid: ec68685a1de3fb04b8c5f14a67f634ec, type: 3}
+  beepClip: {fileID: 8300000, guid: 4d6877eb16b6a1e41b8e42fcfb766691, type: 3}
+  explosionClip: {fileID: 8300000, guid: 959c0fae8daa4dc45a1dfd8f42b05548, type: 3}
+  frostClip: {fileID: 8300000, guid: 4ac170cc8b4008c45bc47704a72dfb23, type: 3}
+  frostDelaySeconds: 0.12
   sfxVolume: 1
   shakeRadius: 300
   shakeStrength: 1
